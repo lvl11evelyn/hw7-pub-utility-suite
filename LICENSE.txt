@@ -1,0 +1,116 @@
+HW UTILITY SUITE SOURCE-AVAILABLE LICENSE
+Version 1.0
+
+Copyright (c) 2026 lvl11evelyn
+All rights reserved except as expressly granted below.
+
+1. PERMISSION
+
+Permission is granted, free of charge, to any person obtaining a copy of
+HW Utility Suite and its associated documentation (the "Software") to:
+
+(a) use the Software for personal, interactive use with HoboWars 1;
+
+(b) inspect and study the source code;
+
+(c) modify the Software for personal quality-of-life, informational,
+    accessibility, presentation, or other interactive purposes; and
+
+(d) redistribute the Software, or modified versions of it, provided that
+    all conditions of this License are satisfied.
+
+2. NON-AUTOMATION REQUIREMENT
+
+The Software may not be used, modified, adapted, combined, distributed,
+or otherwise employed for the purpose of creating, facilitating, or
+enabling automated gameplay.
+
+Prohibited uses include, but are not limited to:
+
+- macroing or botting;
+- unattended gameplay;
+- automated combat;
+- automated navigation;
+- automated resource acquisition;
+- automated transactions;
+- automated repetition of game actions;
+- automatic activation of game actions based upon timers, detected
+  conditions, parsed game state, or other programmatic triggers; and
+- any system that causes an in-game action to occur without
+  contemporaneous user initiation.
+
+Providing an alternate user-controlled interface, keyboard shortcut,
+display enhancement, informational calculation, logging function, or
+other mechanism that requires contemporaneous user initiation does not,
+by itself, constitute prohibited automation under this License.
+
+3. DERIVATIVE WORKS
+
+Any modification, adaptation, fork, or derivative work incorporating
+any substantial portion of the Software remains subject to the
+Non-Automation Requirement in Section 2.
+
+No person may remove, weaken, circumvent, or purport to supersede that
+requirement when redistributing a derivative work.
+
+4. REDISTRIBUTION
+
+Redistributions of the Software or derivative works must:
+
+(a) retain this License;
+
+(b) retain the applicable copyright and attribution notices;
+
+(c) clearly identify material modifications from the original Software;
+    and
+
+(d) not represent a modified version as an official release of
+    HW Utility Suite without the copyright holder's permission.
+
+5. NO IMPLIED PERMISSION
+
+No rights are granted to use the Software for purposes prohibited by
+Section 2.
+
+Availability of the source code, whether through GitHub or any other
+public repository, does not constitute permission to use the Software
+outside the rights expressly granted by this License.
+
+6. DISCLAIMER OF WARRANTY, USER RESPONSIBILITY, AND NO INDEMNIFICATION
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+THE SOFTWARE IS RELEASED FOR THE INTERACTIVE, USER-DIRECTED PURPOSES
+DESCRIBED BY THIS LICENSE AND BY THE OFFICIAL PROJECT DOCUMENTATION AS
+PUBLISHED BY THE COPYRIGHT HOLDER.
+
+EACH USER IS SOLELY RESPONSIBLE FOR THEIR OWN CONDUCT AND FOR DETERMINING
+WHETHER THEIR USE, MODIFICATION, COMBINATION, OR REDISTRIBUTION OF THE
+SOFTWARE COMPLIES WITH THE RULES, TERMS OF SERVICE, POLICIES, OR OTHER
+REQUIREMENTS APPLICABLE TO HOBOWARS 1 OR TO ANY OTHER SERVICE WITH
+WHICH THE SOFTWARE IS USED.
+
+A USER'S DECISION TO USE THE SOFTWARE IN A PROHIBITED MANNER, TO MODIFY
+IT FOR A PROHIBITED PURPOSE, OR TO COMBINE IT WITH OTHER SOFTWARE OR
+SYSTEMS IN A MANNER THAT VIOLATES SUCH RULES OR THIS LICENSE SHALL NOT,
+BY ITSELF, CREATE ANY RESPONSIBILITY, CULPABILITY, AGENCY, PARTNERSHIP,
+ENDORSEMENT, OR ASSUMPTION OF LIABILITY ON THE PART OF THE COPYRIGHT
+HOLDER.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER
+SHALL NOT BE LIABLE FOR ANY CLAIM, LOSS, DAMAGE, PENALTY, FINE, FEE,
+ACCOUNT SANCTION, SUSPENSION, TERMINATION, LOSS OF ACCESS, LOSS OF
+VIRTUAL PROPERTY, LOSS OF DATA, OR OTHER LIABILITY ARISING FROM, OUT OF,
+OR IN CONNECTION WITH THE SOFTWARE OR ITS USE, MISUSE, MODIFICATION,
+DISTRIBUTION, OR OTHER DEALINGS.
+
+THE COPYRIGHT HOLDER DOES NOT AGREE TO INDEMNIFY, DEFEND, REIMBURSE,
+HOLD HARMLESS, OR OTHERWISE ASSUME RESPONSIBILITY FOR ANY USER OR OTHER
+PERSON IN CONNECTION WITH ANY CLAIM, PENALTY, FINE, FEE, COST, EXPENSE,
+LOSS, OR LIABILITY ARISING FROM OR RELATED TO THE SOFTWARE OR ITS USE.
+NO SUCH OBLIGATION SHALL BE IMPLIED FROM THE PUBLIC AVAILABILITY OF THE
+SOFTWARE, FROM THE GRANT OF RIGHTS UNDER THIS LICENSE, OR FROM ANY
+DOCUMENTATION, ASSISTANCE, UPDATE, OR OTHER MATERIAL PROVIDED IN
+CONNECTION WITH THE SOFTWARE.
