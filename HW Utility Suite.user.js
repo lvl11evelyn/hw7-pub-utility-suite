@@ -1,16 +1,22 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      3.3
+// @version      3.4
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
+// @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
+// @supportURL   https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues
+// @updateURL    https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js
+// @downloadURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js
 // @match        *://hobowars.com/game/game.php*
 // @match        *://www.hobowars.com/game/game.php*
 // @run-at       document-end
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_info
 // ==/UserScript==
 
+function HWUS_officialBuild() {
 // ============================================================================
 // SUITE SETTINGS INFRASTRUCTURE
 // Public-build module controls and current-player identity cache.
@@ -1884,7 +1890,6 @@ HWUS_getCurrentPlayerId();
 
     function makePikieHeaderRow(dateKey, pikieName) {
         const row = document.createElement('div');
-
         row.style.whiteSpace = 'nowrap';
         row.style.overflow = 'hidden';
         row.style.textOverflow = 'ellipsis';
@@ -1893,9 +1898,7 @@ HWUS_getCurrentPlayerId();
         row.style.fontSize = '13px';
         row.style.color = '#fda';
         row.style.textDecoration = 'underline solid #efefef';
-
         row.textContent = `${dateKey} < ${pikieName} >`;
-
         return row;
     }
 
@@ -3940,7 +3943,7 @@ HWUS_getCurrentPlayerId();
 
 // ============================================================================
 // MODULE 8: PERSONAL HITLIST KEYBINDS
-// Enables player to use ~+[A-Z, 1-9] to attack preset Hitlist targets.
+// Enables player to activate native Fight! links using ~+[A-Z, 0-9] keybinds.
 // ============================================================================
 (() => {
     'use strict';
@@ -3965,17 +3968,7 @@ HWUS_getCurrentPlayerId();
 
     const SECONDARY_KEYS = new Map([
         ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(letter => [`Key${letter}`, letter]),
-        ...'0123456789'.split('').map(digit => [`Digit${digit}`, digit]),
-        ['Comma', ','],
-        ['Period', '.'],
-        ['Slash', '/'],
-        ['Semicolon', ';'],
-        ['Quote', "'"],
-        ['BracketLeft', '['],
-        ['BracketRight', ']'],
-        ['Backslash', '\\'],
-        ['Minus', '-'],
-        ['Equal', '=']
+        ...'0123456789'.split('').map(digit => [`Digit${digit}`, digit])
     ]);
 
     let assignments = loadAssignments();
@@ -4160,7 +4153,7 @@ HWUS_getCurrentPlayerId();
         capture.className = `${MODULE}-capture`;
         capture.value = pendingCode
             ? formatChord(pendingCode)
-            : 'Click here, then press ` + key';
+            : 'Press ` + A-Z / 0-9';
         capture.setAttribute('aria-label', 'Keybind capture field');
 
         const status = document.createElement('div');
@@ -4169,25 +4162,23 @@ HWUS_getCurrentPlayerId();
         const actions = document.createElement('div');
         actions.className = `${MODULE}-dialog-actions`;
 
-        const confirm = document.createElement('button');
-        confirm.type = 'button';
-        confirm.className = `${MODULE}-btn ${MODULE}-confirm-btn`;
-        confirm.textContent = 'Confirm';
-
         const cancel = document.createElement('button');
         cancel.type = 'button';
         cancel.className = `${MODULE}-btn`;
         cancel.textContent = 'Cancel';
 
-        function updateAssignmentState() {
-            const collisionId = pendingCode
+        function getCollisionId() {
+            return pendingCode
                 ? findPlayerIdByCode(pendingCode, playerId)
                 : null;
+        }
+
+        function updateAssignmentState() {
+            const collisionId = getCollisionId();
 
             if (!pendingCode) {
-                status.textContent = 'Focus the field and hold ` while pressing an allowed key.';
+                status.textContent = 'Press ` together with an available A-Z or 0-9 key.';
                 status.classList.remove(`${MODULE}-error`);
-                confirm.disabled = true;
                 return;
             }
 
@@ -4195,21 +4186,40 @@ HWUS_getCurrentPlayerId();
                 const collisionName = rowsById.get(collisionId)?.playerName || assignments[collisionId]?.name || `Hobo ${collisionId}`;
                 status.textContent = `${formatChord(pendingCode)} is already assigned to ${collisionName}.`;
                 status.classList.add(`${MODULE}-error`);
-                confirm.disabled = true;
                 return;
             }
 
             status.textContent = existing?.code === pendingCode
-                ? 'This Hobo already uses this keybind. Confirming will keep it unchanged.'
-                : 'Ready to assign.';
+                ? 'This Hobo already uses this keybind. Press Enter to keep it.'
+                : 'Ready — press Enter to assign.';
             status.classList.remove(`${MODULE}-error`);
-            confirm.disabled = false;
+        }
+
+        function commitAssignment() {
+            if (!pendingCode || getCollisionId()) return false;
+
+            assignments[playerId] = {
+                code: pendingCode,
+                name: rowData.playerName
+            };
+
+            saveAssignments();
+            refreshCells();
+            closeDialog();
+            return true;
         }
 
         capture.addEventListener('keydown', event => {
             if (event.code === 'Escape') {
                 event.preventDefault();
                 closeDialog();
+                return;
+            }
+
+            if (event.code === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                commitAssignment();
                 return;
             }
 
@@ -4240,24 +4250,13 @@ HWUS_getCurrentPlayerId();
             backquoteHeld = false;
         });
 
-        confirm.addEventListener('click', () => {
-            if (!pendingCode || confirm.disabled) return;
-
-            assignments[playerId] = {
-                code: pendingCode,
-                name: rowData.playerName
-            };
-
-            saveAssignments();
-            refreshCells();
-            closeDialog();
-        });
-
         cancel.addEventListener('click', closeDialog);
-        actions.append(confirm, cancel);
+        actions.append(cancel);
         card.append(title, name, capture, status, actions);
         openDialog = shell.overlay;
         updateAssignmentState();
+
+        requestAnimationFrame(() => capture.focus());
     }
 
     function showContextMenu(playerId, clientX, clientY) {
@@ -4366,9 +4365,9 @@ HWUS_getCurrentPlayerId();
         tip.className = `${MODULE}-tooltip`;
         tip.innerHTML =
             '<div style="text-align: center;font-weight:bold;text-decoration:underline;font-size: 105%;">Personal Hitlist Keybinds</div>' +
-            'Click a ⚙️ or assigned key to set a binding.<br>' +
-            'While viewing the Personal Hitlist, hold <b>~</b> and press the assigned key to attack the Hobo.<br>' +
-            'A keybind will only Fight when the native button is available.<br><br>' +
+            'Click a ⚙️ or assigned key to set a binding, then press the key pair and Enter.<br>' +
+            'While viewing the Personal Hitlist, hold <b>~</b> and press the assigned key to activate that Hobo\'s native <b>Fight!</b> link.<br>' +
+            'A keybind only acts when the native Fight! link is available.<br><br>' +
             '<span style="font-size: 85%;">~ refers to the ` / ~ key.</span><br>' +
             '<span style="font-size: 95%;font-weight: bold;"> Do not use Shift + `</span>';
 
@@ -7126,5 +7125,143 @@ HWUS_getCurrentPlayerId();
             note.textContent = response.reason;
             ui.panel.appendChild(note);
         }
+    }
+})();
+}
+
+// ============================================================================
+// OFFICIAL RELEASE INTEGRITY GATE
+// Runs only while every canonical metadata identity field still identifies this
+// exact official release. A fork that changes any such field is left alone.
+// ============================================================================
+const HWUS_RELEASE_IDENTITY = Object.freeze({
+    author: 'lvl11evelyn HW1(2924238)',
+    name: 'HW Utility Suite',
+    namespace: 'https://www.hobowars.com/',
+    version: '3.4',
+    homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
+    supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
+    updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
+    downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
+});
+
+const HWUS_RELEASE_SHA256 = '298029a03061fdf55cc855fc7eabd94cc24a5874a45be33a58ea3af322f98112';
+
+function HWUS_getMetadataValue(key) {
+    if (typeof GM_info !== 'object' || !GM_info) return null;
+
+    const metadata = String(GM_info.scriptMetaStr || '');
+    const escapedKey = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = metadata.match(new RegExp(`^\\s*//\\s*@${escapedKey}\\s+(.+?)\\s*$`, 'm'));
+    return match ? match[1] : null;
+}
+
+function HWUS_claimsOfficialReleaseIdentity() {
+    return Object.entries(HWUS_RELEASE_IDENTITY).every(
+        ([key, expected]) => HWUS_getMetadataValue(key) === expected
+    );
+}
+
+async function HWUS_hashReleaseBody() {
+    if (!globalThis.crypto?.subtle || typeof TextEncoder !== 'function') return null;
+
+    const source = Function.prototype.toString
+        .call(HWUS_officialBuild)
+        .replace(/\r\n?/g, '\n');
+
+    const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(source)
+    );
+
+    return Array.from(new Uint8Array(digest), byte =>
+        byte.toString(16).padStart(2, '0')
+    ).join('');
+}
+
+function HWUS_renderIntegrityFailure() {
+    if (document.getElementById('hwus-integrity-failure')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'hwus-integrity-failure';
+    overlay.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:2147483647',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'padding:24px', 'box-sizing:border-box',
+        'background:rgba(0,0,0,.72)', 'font-family:Arial,sans-serif'
+    ].join(';');
+
+    const panel = document.createElement('div');
+    panel.style.cssText = [
+        'width:min(560px,100%)', 'box-sizing:border-box', 'padding:20px 22px',
+        'border:1px solid #888', 'border-radius:6px', 'background:#f3f3f3',
+        'color:#111', 'box-shadow:0 8px 32px rgba(0,0,0,.45)'
+    ].join(';');
+
+    const heading = document.createElement('div');
+    heading.style.cssText = 'margin:0 0 12px;font-size:20px;font-weight:bold;text-align:center';
+    heading.textContent = 'HW Utility Suite — Integrity Check Failed';
+
+    const message = document.createElement('p');
+    message.style.cssText = 'margin:0 0 10px;line-height:1.45';
+    message.textContent =
+        'This installation still identifies itself as an official HW Utility Suite v3.4 release, ' +
+        'but its executable logic no longer matches the published build. Suite execution has been halted.';
+
+    const instruction = document.createElement('p');
+    instruction.style.cssText = 'margin:0 0 16px;line-height:1.45';
+    instruction.textContent =
+        'Reinstall the current official build from the project repository to continue using HW Utility Suite.';
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;justify-content:center;gap:10px;flex-wrap:wrap';
+
+    const reinstall = document.createElement('a');
+    reinstall.href = HWUS_RELEASE_IDENTITY.downloadURL;
+    reinstall.textContent = 'Reinstall Official Build';
+    reinstall.style.cssText = [
+        'display:inline-block', 'padding:7px 12px', 'border:1px solid #777',
+        'border-radius:4px', 'background:#ddd', 'color:#111',
+        'font-weight:bold', 'text-decoration:none'
+    ].join(';');
+
+    const repository = document.createElement('a');
+    repository.href = HWUS_RELEASE_IDENTITY.homepageURL;
+    repository.target = '_blank';
+    repository.rel = 'noopener noreferrer';
+    repository.textContent = 'View Repository';
+    repository.style.cssText = reinstall.style.cssText;
+
+    actions.append(reinstall, repository);
+    panel.append(heading, message, instruction, actions);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+}
+
+(async function HWUS_launchOfficialRelease() {
+    if (!HWUS_claimsOfficialReleaseIdentity()) {
+        HWUS_officialBuild();
+        return;
+    }
+
+    try {
+        const installedHash = await HWUS_hashReleaseBody();
+
+        // Fail open only when the browser cannot perform the cryptographic check;
+        // this avoids falsely accusing an otherwise official installation.
+        if (!installedHash) {
+            HWUS_officialBuild();
+            return;
+        }
+
+        if (installedHash !== HWUS_RELEASE_SHA256) {
+            HWUS_renderIntegrityFailure();
+            return;
+        }
+
+        HWUS_officialBuild();
+    } catch (error) {
+        console.warn('[HW Utility Suite] Integrity verification unavailable:', error);
+        HWUS_officialBuild();
     }
 })();
