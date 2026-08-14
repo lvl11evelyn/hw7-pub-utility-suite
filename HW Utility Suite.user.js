@@ -1427,21 +1427,21 @@ HWUS_getCurrentPlayerId();
         style.textContent = `
             #${MODULE}-layout {
                 display: flex;
-                flex-wrap: wrap;
                 align-items: flex-start;
                 width: 100%;
                 box-sizing: border-box;
             }
 
             #${MODULE}-layout > table[width="550"]:first-of-type {
-                width: 420px !important;
-                margin: 0 0 0 auto;
-                flex: 0 0 420px;
+                width: auto !important;
+                margin: 0;
+                flex: 1 0 60%;
+                min-width: 420px;
             }
 
             #${MODULE}-panel {
                 position: relative;
-                flex: 0 0 215px;
+                flex: 1 1 40%;
                 height: auto;
                 max-height: 265px;
                 overflow-y: scroll;
@@ -1450,7 +1450,6 @@ HWUS_getCurrentPlayerId();
                 border-radius: 4px;
                 box-sizing: border-box;
                 min-width: 215px;
-                max-width: 215px;
                 padding: 0 3px 3px;
                 color: #000;
                 font-size: 10px;
@@ -1540,7 +1539,7 @@ HWUS_getCurrentPlayerId();
     const K_PIKIE_PENDING = 'jbgl_pikie_pending_v1';
     const K_PIKIE_LAST_FP = 'jbgl_pikie_last_fp_v1';
 
-    const PIKIE_PANEL_W = 185;
+    const PIKIE_PANEL_W = 180;
 
     const href = String(location.href || '');
     const isPikieSelector =
@@ -1754,7 +1753,7 @@ HWUS_getCurrentPlayerId();
             'display:flex',
             'flex-direction:column',
             'font-family:Consolas,monospace',
-            'font-size:11px',
+            'font-size:10px',
             'line-height:1.2',
             'color:#f4f4f4'
         ].join(';');
@@ -1782,7 +1781,7 @@ HWUS_getCurrentPlayerId();
         headerWrap.style.backgroundColor = '#efefef';
         headerWrap.style.color = '#000000';
         headerWrap.style.fontWeight = 'bold';
-        headerWrap.style.fontSize = '15px';
+        headerWrap.style.fontSize = '14px';
         headerWrap.textContent = '< Skill >';
 
         const body = document.createElement('div');
@@ -1811,7 +1810,7 @@ HWUS_getCurrentPlayerId();
             'padding:5px 3px 3px',
             'box-sizing:border-box',
             'font-family:Metamorphous,monospace',
-            'font-size:10.8px',
+            'font-size:9.8px',
             'font-weight:bold',
             'line-height:1.3',
             'color:#d8d8d8'
@@ -1831,7 +1830,7 @@ HWUS_getCurrentPlayerId();
             'border-radius:3px'
         ].join(';');
 
-        const clearBtn = makeBtn('Clear', '80px');
+        const clearBtn = makeBtn('Clear');
         clearBtn.addEventListener('click', (e) => {
             e.preventDefault();
             savePikieEntries([]);
@@ -1846,7 +1845,7 @@ HWUS_getCurrentPlayerId();
         content.insertBefore(panel, content.firstChild);
     }
 
-    function makeBtn(label, width = '80px') {
+    function makeBtn(label) {
         const btn = document.createElement('a');
         btn.href = '#';
         btn.className = 'btn light-blue hover-green';
@@ -1854,13 +1853,12 @@ HWUS_getCurrentPlayerId();
         btn.style.display = 'inline-flex';
         btn.style.alignItems = 'center';
         btn.style.justifyContent = 'center';
-        btn.style.width = width;
-        btn.style.height = '24px';
+        btn.style.width = 'auto';
+        btn.style.height = 'auto';
         btn.style.whiteSpace = 'nowrap';
-        btn.style.fontSize = '14px';
+        btn.style.fontSize = '13px';
         btn.style.textTransform = 'uppercase';
-        btn.style.paddingTop = '8px';
-        btn.style.paddingBottom = '8px';
+        btn.style.padding = '5px 10px';
         return btn;
     }
 
@@ -1895,7 +1893,7 @@ HWUS_getCurrentPlayerId();
         row.style.textOverflow = 'ellipsis';
         row.style.minWidth = '0';
         row.style.fontWeight = 'bold';
-        row.style.fontSize = '13px';
+        row.style.fontSize = '12px';
         row.style.color = '#fda';
         row.style.textDecoration = 'underline solid #efefef';
         row.textContent = `${dateKey} < ${pikieName} >`;
@@ -1905,7 +1903,7 @@ HWUS_getCurrentPlayerId();
     function makePikieEventRow(r) {
         const row = document.createElement('div');
         row.style.whiteSpace = 'pre';
-        row.style.fontSize = '13px';
+        row.style.fontSize = '12px';
         row.style.textAlign = 'right';
 
         const skillText = Number(r.skill || 0).toFixed(3).padStart(5, ' ');
@@ -1921,7 +1919,7 @@ HWUS_getCurrentPlayerId();
         row.style.whiteSpace = 'pre';
         row.style.color = '#ffffff';
         row.style.textAlign = 'right';
-        row.style.fontSize = '14px';
+        row.style.fontSize = '13px';
 
         const skillText = t.skill.toFixed(3).padStart(5, ' ');
         const cashText = `$${Number(t.cash || 0).toLocaleString()}`.padStart(8, ' ');
@@ -1934,7 +1932,7 @@ HWUS_getCurrentPlayerId();
     function makePikieGrandTotalRow(t) {
         const row = document.createElement('div');
         row.style.whiteSpace = 'pre';
-        row.style.fontSize = '14px';
+        row.style.fontSize = '13px';
         row.style.textAlign = 'center';
 
         const skillText = t.skill.toFixed(3).padStart(5, ' ');
@@ -4368,8 +4366,10 @@ HWUS_getCurrentPlayerId();
             'Click a ⚙️ or assigned key to set a binding, then press the key pair and Enter.<br>' +
             'While viewing the Personal Hitlist, hold <b>~</b> and press the assigned key to activate that Hobo\'s native <b>Fight!</b> link.<br>' +
             'A keybind only acts when the native Fight! link is available.<br><br>' +
+            '<div style="text-align:center;">' +
             '<span style="font-size: 85%;">~ refers to the ` / ~ key.</span><br>' +
-            '<span style="font-size: 95%;font-weight: bold;"> Do not use Shift + `</span>';
+            '<span style="font-size: 95%;font-weight: bold;">Do not use Shift + `</span>' +
+            '</div>';
 
         document.body.appendChild(tip);
 
@@ -6574,6 +6574,131 @@ HWUS_getCurrentPlayerId();
         };
     }
 
+    const BATTLE_TIME_TOLERANCE_SECONDS = 1;
+    const SYNTHETIC_YEAR_SECONDS = 366 * 24 * 60 * 60;
+
+    function parseClockParts(text) {
+        const match = String(text || '').trim().match(
+            /^(\d{1,2}):(\d{2})[.:](\d{2})\s*(am|pm)$/i
+        );
+        if (!match) return null;
+
+        let hour = Number(match[1]);
+        const minute = Number(match[2]);
+        const second = Number(match[3]);
+        const ap = match[4].toLowerCase();
+
+        if (ap === 'pm' && hour < 12) hour += 12;
+        if (ap === 'am' && hour === 12) hour = 0;
+
+        if (hour > 23 || minute > 59 || second > 59) return null;
+        return { hour, minute, second };
+    }
+
+    function monthNumber(name) {
+        const months = {
+            jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+            jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
+        };
+        return months[String(name || '').slice(0, 3).toLowerCase()] || 0;
+    }
+
+    function makeSyntheticMoment(month, day, clock) {
+        if (!month || !day || !clock) return null;
+
+        const ms = Date.UTC(2000, month - 1, day, clock.hour, clock.minute, clock.second);
+        if (!Number.isFinite(ms)) return null;
+        return Math.floor(ms / 1000);
+    }
+
+    function parseCurrentFightMoment() {
+        // Only a freshly generated outgoing fight is useful here. A viewed
+        // battle-log page carries the time it was opened, not the fight time.
+        if (!isOutgoingFight) return null;
+
+        const dateText = (document.querySelector('.clock i')?.textContent || '').trim();
+        const dateMatch = dateText.match(/^([A-Za-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?$/i);
+        if (!dateMatch) return null;
+
+        const clock = parseClockParts(document.querySelector('#clock')?.textContent || '');
+        return makeSyntheticMoment(
+            monthNumber(dateMatch[1]),
+            Number(dateMatch[2]),
+            clock
+        );
+    }
+
+    function parseOverviewMoment(text) {
+        const match = String(text || '').trim().match(
+            /^(\d{1,2})\/(\d{1,2})\s+(\d{1,2}:\d{2}\.\d{2}\s*(?:am|pm))$/i
+        );
+        if (!match) return null;
+
+        return makeSyntheticMoment(
+            Number(match[1]),
+            Number(match[2]),
+            parseClockParts(match[3])
+        );
+    }
+
+    function momentDifferenceSeconds(a, b) {
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
+        const raw = Math.abs(a - b);
+        return Math.min(raw, Math.abs(SYNTHETIC_YEAR_SECONDS - raw));
+    }
+
+    function getFightOrientation(opponent) {
+        if (!opponent) return null;
+
+        if (isOutgoingFight) {
+            return { attackerId: MY_ID, defenderId: opponent.id };
+        }
+
+        if (isBattleLog) {
+            const participants = parseParticipants();
+            if (participants.length >= 2) {
+                return {
+                    attackerId: participants[0].id,
+                    defenderId: participants[1].id
+                };
+            }
+        }
+
+        return null;
+    }
+
+    function getDirectFightMetadata(opponent) {
+        const orientation = getFightOrientation(opponent);
+        const fightMoment = parseCurrentFightMoment();
+
+        if (!orientation || !Number.isFinite(fightMoment)) return {};
+
+        return {
+            attackerId: orientation.attackerId,
+            defenderId: orientation.defenderId,
+            fightMoment
+        };
+    }
+
+    function findTimestampBridge(record, attackerId, defenderId, result, overviewMoment) {
+        if (!record || !Number.isFinite(overviewMoment)) return null;
+
+        const candidates = Object.entries(record.seen || {}).filter(([key, entry]) => {
+            if (key.startsWith('battlel:')) return false;
+            if (!entry || typeof entry !== 'object') return false;
+            if (entry.source !== 'outgoing') return false;
+            if (entry.result !== result) return false;
+            if (entry.attackerId !== attackerId || entry.defenderId !== defenderId) return false;
+
+            return momentDifferenceSeconds(entry.fightMoment, overviewMoment)
+                <= BATTLE_TIME_TOLERANCE_SECONDS;
+        });
+
+        return candidates.length === 1
+            ? { key: candidates[0][0], entry: candidates[0][1] }
+            : null;
+    }
+
     function findFightHeader() {
         const candidates = [...document.querySelectorAll('body *')];
 
@@ -6857,8 +6982,12 @@ HWUS_getCurrentPlayerId();
         incrementOutcome(record, result, 1);
 
         const source = isBattleLog ? 'manual-log' : 'outgoing';
+        const fightMetadata = isOutgoingFight
+            ? getDirectFightMetadata(opponent)
+            : {};
+
         for (const key of fightKeys) {
-            record.seen[key] = makeSeenEntry(result, source);
+            record.seen[key] = makeSeenEntry(result, source, fightMetadata);
         }
 
         saveState(state);
@@ -6909,6 +7038,7 @@ HWUS_getCurrentPlayerId();
         let skipped = 0;
 
         for (const row of table.tBodies?.[0]?.rows || []) {
+            const timeCell = row.querySelector('.ts_time');
             const attackerCell = row.querySelector('.ts_atk');
             const defenderCell = row.querySelector('.ts_def');
             const viewLink = row.querySelector('a[href*="cmd=battlel"][href*="id="]');
@@ -6916,7 +7046,7 @@ HWUS_getCurrentPlayerId();
             const attacker = parseProfileCell(attackerCell);
             const defender = parseProfileCell(defenderCell);
 
-            if (!attacker || !defender || !viewLink) {
+            if (!timeCell || !attacker || !defender || !viewLink) {
                 skipped += 1;
                 continue;
             }
@@ -6954,9 +7084,38 @@ HWUS_getCurrentPlayerId();
                 continue;
             }
 
+            const overviewMoment = parseOverviewMoment(timeCell.textContent || '');
+            const timestampBridge = findTimestampBridge(
+                record,
+                attacker.id,
+                defender.id,
+                result,
+                overviewMoment
+            );
+
+            if (timestampBridge) {
+                record.seen[battleLogKey] = makeSeenEntry(
+                    result,
+                    'alias',
+                    {
+                        aliasOf: timestampBridge.key,
+                        timestampBridge: true,
+                        attackerId: attacker.id,
+                        defenderId: defender.id,
+                        fightMoment: overviewMoment
+                    }
+                );
+                alreadyKnown += 1;
+                continue;
+            }
+
             incrementOutcome(record, result, 1);
             record.seen[battleLogKey] = {
-                ...makeSeenEntry(result, 'overview'),
+                ...makeSeenEntry(result, 'overview', {
+                    attackerId: attacker.id,
+                    defenderId: defender.id,
+                    fightMoment: overviewMoment
+                }),
                 provisional: true
             };
 
@@ -7029,12 +7188,7 @@ HWUS_getCurrentPlayerId();
         tally.textContent =
             `W ${record.wins}   L ${record.losses}   S ${record.stalemates}   Win ${winRate}`;
 
-        const key = document.createElement('div');
-        key.style.color = '#666';
-        key.style.fontSize = '10px';
-        key.textContent = `Key: ${getFightKeys(opponent.id)[0]}`;
-
-        panel.append(title, tally, key);
+        panel.append(title, tally);
 
         if (reconciliation?.message) {
             const reconciliationNote = document.createElement('div');
@@ -7145,7 +7299,7 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '298029a03061fdf55cc855fc7eabd94cc24a5874a45be33a58ea3af322f98112';
+const HWUS_RELEASE_SHA256 = '11bb7dc9a05c8aefc8d01495601d75aa97c8cf3449ccdac6bc98ab2044273439';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
