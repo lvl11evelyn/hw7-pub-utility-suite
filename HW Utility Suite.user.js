@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.0
+// @version      4.1
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -1374,6 +1374,12 @@ HWUS_getCurrentPlayerId();
         Record: '#f6b008'
     };
 
+    const RECORD_METRICS = [
+        { label: 'Record (Wins)', index: 1, percent: false },
+        { label: 'Record (Losses)', index: 2, percent: false },
+        { label: 'Record (W/R%)', index: 3, percent: true }
+    ];
+
     const url = new URL(location.href);
     const playerId = url.searchParams.get('ID');
 
@@ -1406,11 +1412,11 @@ HWUS_getCurrentPlayerId();
         saveHistory(history);
     } else {
         const changedFields = FIELD_ORDER.filter(field =>
-                                                 numericValuesChanged(
-            previousSnapshot[field]?.numbers,
-            currentSnapshot[field]?.numbers
-        )
-                                                );
+            numericValuesChanged(
+                previousSnapshot[field]?.numbers,
+                currentSnapshot[field]?.numbers
+            )
+        );
 
         if (changedFields.length) {
             history.unshift(
@@ -1494,8 +1500,8 @@ HWUS_getCurrentPlayerId();
 
     function readFieldText(root, labelText) {
         const label = [...root.querySelectorAll('b')].find(node =>
-                                                           node.textContent.trim() === labelText
-                                                          );
+            node.textContent.trim() === labelText
+        );
 
         if (!label) return '';
 
@@ -1531,8 +1537,8 @@ HWUS_getCurrentPlayerId();
         if (previousNumbers.length !== currentNumbers.length) return true;
 
         return currentNumbers.some((value, index) =>
-                                   value !== previousNumbers[index]
-                                  );
+            value !== previousNumbers[index]
+        );
     }
 
     function makeRecording(current, previous, changedFields, initial) {
@@ -1610,6 +1616,7 @@ HWUS_getCurrentPlayerId();
         }
 
         layout.insertBefore(panel, nativeTable);
+        installResponsiveValueRows(panel);
     }
 
     function buildRecording(recording) {
@@ -1624,6 +1631,14 @@ HWUS_getCurrentPlayerId();
         for (const field of FIELD_ORDER) {
             const entry = recording.fields?.[field];
             if (!entry) continue;
+
+            if (field === 'Record' && entry.currentNumbers?.length >= 4) {
+                for (const metric of RECORD_METRICS) {
+                    group.append(buildRecordMetricRow(entry, metric, recording.initial));
+                }
+                continue;
+            }
+
             group.append(buildFieldRow(field, entry, recording.initial));
         }
 
@@ -1631,38 +1646,106 @@ HWUS_getCurrentPlayerId();
     }
 
     function buildFieldRow(field, entry, initial) {
+        return buildMetricRow({
+            labelText: field,
+            color: FIELD_COLORS[field],
+            latestText: entry.currentText,
+            previousText: !initial ? entry.previousText : '',
+            deltaText: initial ? 'Δ' : formatDelta(entry.deltas)
+        });
+    }
+
+    function buildRecordMetricRow(entry, metric, initial) {
+        const currentValue = entry.currentNumbers?.[metric.index];
+        const previousValue = entry.previousNumbers?.[metric.index];
+        const deltaValue = entry.deltas?.[metric.index];
+
+        return buildMetricRow({
+            labelText: metric.label,
+            color: FIELD_COLORS.Record,
+            latestText: formatRecordMetricValue(currentValue, metric.percent),
+            previousText: !initial && Number.isFinite(previousValue)
+            ? formatRecordMetricValue(previousValue, metric.percent)
+            : '',
+            deltaText: initial
+            ? 'Δ'
+            : formatSingleDelta(deltaValue, metric.percent ? '%' : '')
+        });
+    }
+
+    function buildMetricRow({ labelText, color, latestText, previousText, deltaText }) {
         const row = document.createElement('div');
         row.className = `${MODULE}-field-row`;
+        row.style.setProperty('--hw-player-stat-field-color', color || '#000');
 
         const label = document.createElement('div');
         label.className = `${MODULE}-label`;
-        label.style.color = FIELD_COLORS[field];
-        label.textContent = `${field}:`;
+        label.textContent = labelText;
+
+        const values = document.createElement('div');
+        values.className = `${MODULE}-values`;
 
         const latest = document.createElement('div');
         latest.className = `${MODULE}-latest`;
-        latest.textContent = entry.currentText;
+        latest.textContent = latestText || '—';
+        values.append(latest);
 
-        row.append(label, latest);
+        if (previousText) {
+            values.classList.add(`${MODULE}-values-paired`);
 
-        if (!initial && entry.previousText) {
             const previous = document.createElement('div');
             previous.className = `${MODULE}-previous`;
-            previous.textContent = entry.previousText;
-
-            const delta = document.createElement('div');
-            delta.className = `${MODULE}-delta`;
-            delta.textContent = formatDelta(entry.deltas);
-
-            row.append(previous, delta);
-        } else {
-            const delta = document.createElement('span');
-            delta.className = `${MODULE}-delta`;
-            delta.textContent = 'Δ ';
-            row.append(delta);
+            previous.textContent = previousText;
+            values.append(previous);
         }
 
+        const delta = document.createElement('div');
+        delta.className = `${MODULE}-delta`;
+        delta.textContent = deltaText || 'Δ';
+
+        row.append(label, values, delta);
         return row;
+    }
+
+    function installResponsiveValueRows(panel) {
+        const sync = () => {
+            const valueRows = panel.querySelectorAll(
+                `.${MODULE}-values.${MODULE}-values-paired`
+            );
+
+            for (const values of valueRows) {
+                values.classList.remove(`${MODULE}-values-stacked`);
+
+                const cells = [...values.children];
+                const cramped = cells.some(cell =>
+                    cell.scrollWidth > cell.clientWidth + 0.5
+                );
+
+                values.classList.toggle(`${MODULE}-values-stacked`, cramped);
+            }
+        };
+
+        requestAnimationFrame(sync);
+
+        if (typeof ResizeObserver === 'function') {
+            const observer = new ResizeObserver(sync);
+            observer.observe(panel);
+        } else {
+            window.addEventListener('resize', sync, { passive: true });
+        }
+    }
+
+    function formatRecordMetricValue(value, percent) {
+        if (!Number.isFinite(value)) return '—';
+
+        if (percent) {
+            return `${value.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            })}%`;
+        }
+
+        return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
     }
 
     function formatDelta(deltas) {
@@ -1672,6 +1755,11 @@ HWUS_getCurrentPlayerId();
             if (!Number.isFinite(value)) return 'n/a';
             return formatSignedNumber(value);
         }).join(' / ')}`;
+    }
+
+    function formatSingleDelta(value, suffix = '') {
+        if (!Number.isFinite(value)) return 'Δ n/a';
+        return `Δ ${formatSignedNumber(value)}${suffix}`;
     }
 
     function formatSignedNumber(value) {
@@ -1737,7 +1825,6 @@ HWUS_getCurrentPlayerId();
                 border: 1px solid #fcc;
                 border-radius: 4px;
                 box-sizing: border-box;
-                min-width: 215px;
                 padding: 0 3px 3px;
                 color: #000;
                 font-size: 10px;
@@ -1783,12 +1870,35 @@ HWUS_getCurrentPlayerId();
             }
 
             .${MODULE}-field-row {
-                margin-bottom: 3px;
-                overflow-wrap: unset;
+                margin-bottom: 4px;
+                min-width: 0;
             }
 
             .${MODULE}-label {
+                color: var(--hw-player-stat-field-color);
                 font-weight: bold;
+            }
+
+            .${MODULE}-values {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                min-width: 0;
+                column-gap: 4px;
+                align-items: baseline;
+            }
+
+            .${MODULE}-values.${MODULE}-values-paired {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .${MODULE}-values.${MODULE}-values-stacked {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .${MODULE}-latest,
+            .${MODULE}-previous {
+                min-width: 0;
+                white-space: nowrap;
             }
 
             .${MODULE}-latest {
@@ -1796,13 +1906,21 @@ HWUS_getCurrentPlayerId();
             }
 
             .${MODULE}-previous {
-                color: #343434;
-                margin-left: 15px;
+                color: #666;
+                font-size: calc(1em - 1px);
             }
 
             .${MODULE}-delta {
-                color: #282828;
-                float: right;
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+                margin-top: 1px;
+                padding: 0 1px 1px 0;
+                border-bottom: 1px solid #777;
+                color: var(--hw-player-stat-field-color);
+                font-weight: bold;
+                text-align: right;
+                white-space: nowrap;
             }
 
             .${MODULE}-empty {
@@ -1813,6 +1931,7 @@ HWUS_getCurrentPlayerId();
         document.head.append(style);
     }
 })();
+
 
 // ============================================================================
 // MODULE 5: PIKIE RACES LOG
