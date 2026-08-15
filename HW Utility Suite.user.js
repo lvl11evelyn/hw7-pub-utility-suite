@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      3.4
+// @version      4.0
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -23,6 +23,13 @@ function HWUS_officialBuild() {
 // ============================================================================
 const HWUS_SETTINGS_KEY = 'hwUtilitySuite.moduleStates.v1';
 const HWUS_PLAYER_ID_KEY = 'hwUtilitySuite.currentPlayerId.v1';
+const HWUS_CONTENT_AREA_KEY = 'hwUtilitySuite.contentArea.v1';
+
+const HWUS_CONTENT_AREA_DEFAULTS = Object.freeze({
+    enabled: false,
+    minWidth: 900,
+    maxWidth: 1400
+});
 
 const HWUS_MODULES = Object.freeze([
     [1, 'UFC Penalty Info Toggle'],
@@ -65,6 +72,68 @@ function HWUS_setModuleEnabled(moduleId, enabled) {
     states[String(moduleId)] = !!enabled;
     HWUS_saveModuleStates(states);
 }
+
+function HWUS_normalizeContentAreaSettings(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const clampWidth = (width, fallback) => {
+        const numeric = Math.round(Number(width));
+        return Number.isFinite(numeric)
+            ? Math.min(3000, Math.max(400, numeric))
+            : fallback;
+    };
+
+    const minWidth = clampWidth(
+        source.minWidth,
+        HWUS_CONTENT_AREA_DEFAULTS.minWidth
+    );
+    const maxWidth = Math.max(
+        minWidth,
+        clampWidth(source.maxWidth, HWUS_CONTENT_AREA_DEFAULTS.maxWidth)
+    );
+
+    return {
+        enabled: source.enabled === true,
+        minWidth,
+        maxWidth
+    };
+}
+
+function HWUS_loadContentAreaSettings() {
+    try {
+        const raw = GM_getValue(HWUS_CONTENT_AREA_KEY, '{}');
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return HWUS_normalizeContentAreaSettings(parsed);
+    } catch {
+        return { ...HWUS_CONTENT_AREA_DEFAULTS };
+    }
+}
+
+function HWUS_saveContentAreaSettings(settings) {
+    const normalized = HWUS_normalizeContentAreaSettings(settings);
+    GM_setValue(HWUS_CONTENT_AREA_KEY, JSON.stringify(normalized));
+    return normalized;
+}
+
+function HWUS_applyContentAreaSettings() {
+    document.getElementById('hwus-content-area-layout')?.remove();
+
+    const settings = HWUS_loadContentAreaSettings();
+    if (!settings.enabled) return;
+
+    const style = document.createElement('style');
+    style.id = 'hwus-content-area-layout';
+    style.textContent = `
+        .content-area {
+            margin: 0 auto 0 15px !important;
+            min-width: ${settings.minWidth}px !important;
+            max-width: ${settings.maxWidth}px !important;
+        }
+    `;
+
+    document.head.appendChild(style);
+}
+
+HWUS_applyContentAreaSettings();
 
 function HWUS_extractPlayerId(anchor) {
     if (!anchor) return null;
@@ -123,12 +192,36 @@ function HWUS_getCurrentPlayerId() {
             font-family: Arial, sans-serif;
             font-size: 13px;
         }
+        #hwus-preferences-panel .hwus-title-row {
+            display: flex;
+            align-items: baseline;
+            gap: 3px;
+            width: fit-content;
+            max-width: 100%;
+            margin: 0 auto 3px;
+        }
+        #hwus-preferences-panel .hwus-title-side,
+        #hwus-preferences-panel .hwus-version {
+            flex: 0 1 20%;
+            min-width: 0;
+        }
+        #hwus-preferences-panel .hwus-title-side {
+            visibility: hidden;
+        }
         #hwus-preferences-panel .hwus-title {
-            margin: 0 0 3px;
+            flex: 1 0 auto;
             text-align: center;
             font-size: 20px;
             font-weight: bold;
             letter-spacing: .5px;
+        }
+        #hwus-preferences-panel .hwus-version {
+            color: #888;
+            font-size: 10px;
+            font-weight: normal;
+            letter-spacing: 0;
+            text-align: left;
+            white-space: nowrap;
         }
         #hwus-preferences-panel .hwus-subtitle {
             margin-bottom: 9px;
@@ -199,18 +292,57 @@ function HWUS_getCurrentPlayerId() {
             min-width: 95px;
             cursor: pointer;
         }
+        #hwus-preferences-panel .hwus-content-area-settings {
+            margin-top: 9px;
+            padding-top: 8px;
+            border-top: 1px solid #ccc;
+            color: #555;
+            font-size: 10px;
+        }
+        #hwus-preferences-panel .hwus-content-area-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #hwus-preferences-panel .hwus-content-area-toggle input {
+            margin: 0;
+        }
+        #hwus-preferences-panel .hwus-content-area-widths {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        #hwus-preferences-panel .hwus-content-area-widths input {
+            width: 58px;
+            box-sizing: border-box;
+            padding: 1px 3px;
+            font: inherit;
+            text-align: right;
+        }
+        #hwus-preferences-panel .hwus-content-area-widths.hwus-disabled {
+            opacity: .45;
+        }
+        #hwus-preferences-panel .hwus-content-area-help {
+            margin-top: 4px;
+            text-align: center;
+            color: #888;
+            font-size: 9px;
+        }
         #hwus-preferences-panel .hwus-note {
             margin-top: 7px;
             text-align: center;
             color: #777;
             font-size: 10px;
         }
-        @media (max-width: 700px) {
-            #hwus-preferences-panel {
-                float: none;
-                width: auto;
-                margin: 0 0 16px;
-            }
+        #hwus-preferences-panel.hwus-stacked {
+            float: none;
+            width: auto;
+            margin: 0 0 16px;
         }
     `;
     document.head.appendChild(style);
@@ -218,9 +350,22 @@ function HWUS_getCurrentPlayerId() {
     const panel = document.createElement('section');
     panel.id = 'hwus-preferences-panel';
 
+    const titleRow = document.createElement('div');
+    titleRow.className = 'hwus-title-row';
+
+    const titleSide = document.createElement('div');
+    titleSide.className = 'hwus-title-side';
+    titleSide.setAttribute('aria-hidden', 'true');
+
     const title = document.createElement('div');
     title.className = 'hwus-title';
     title.textContent = 'HW Utility Suite';
+
+    const version = document.createElement('div');
+    version.className = 'hwus-version';
+    version.textContent = `v${(typeof GM_info === 'object' && GM_info?.script?.version) || '?'}`;
+
+    titleRow.append(titleSide, title, version);
 
     const subtitle = document.createElement('div');
     subtitle.className = 'hwus-subtitle';
@@ -278,11 +423,90 @@ function HWUS_getCurrentPlayerId() {
     disableAll.addEventListener('click', () => setAll(false));
     actions.append(enableAll, disableAll);
 
+    const contentAreaSettings = HWUS_loadContentAreaSettings();
+
+    const contentAreaSection = document.createElement('div');
+    contentAreaSection.className = 'hwus-content-area-settings';
+
+    const contentAreaToggle = document.createElement('label');
+    contentAreaToggle.className = 'hwus-content-area-toggle';
+
+    const contentAreaCheckbox = document.createElement('input');
+    contentAreaCheckbox.type = 'checkbox';
+    contentAreaCheckbox.checked = contentAreaSettings.enabled;
+
+    const contentAreaToggleText = document.createElement('span');
+    contentAreaToggleText.textContent = 'Custom Content Area Width';
+
+    contentAreaToggle.append(contentAreaCheckbox, contentAreaToggleText);
+
+    const contentAreaWidths = document.createElement('div');
+    contentAreaWidths.className = 'hwus-content-area-widths';
+
+    const minLabel = document.createElement('span');
+    minLabel.textContent = 'Min';
+
+    const minInput = document.createElement('input');
+    minInput.type = 'number';
+    minInput.min = '400';
+    minInput.max = '3000';
+    minInput.step = '10';
+    minInput.value = String(contentAreaSettings.minWidth);
+
+    const maxLabel = document.createElement('span');
+    maxLabel.textContent = 'Max';
+
+    const maxInput = document.createElement('input');
+    maxInput.type = 'number';
+    maxInput.min = '400';
+    maxInput.max = '3000';
+    maxInput.step = '10';
+    maxInput.value = String(contentAreaSettings.maxWidth);
+
+    const pxLabel = document.createElement('span');
+    pxLabel.textContent = 'px';
+
+    contentAreaWidths.append(minLabel, minInput, maxLabel, maxInput, pxLabel);
+
+    const contentAreaHelp = document.createElement('div');
+    contentAreaHelp.className = 'hwus-content-area-help';
+    contentAreaHelp.textContent = 'Global Future-layout .content-area override; left margin is 15px.';
+
+    const syncContentAreaControls = () => {
+        const disabled = !contentAreaCheckbox.checked;
+        minInput.disabled = disabled;
+        maxInput.disabled = disabled;
+        contentAreaWidths.classList.toggle('hwus-disabled', disabled);
+    };
+
+    const saveContentAreaControls = () => {
+        const saved = HWUS_saveContentAreaSettings({
+            enabled: contentAreaCheckbox.checked,
+            minWidth: minInput.value,
+            maxWidth: maxInput.value
+        });
+
+        minInput.value = String(saved.minWidth);
+        maxInput.value = String(saved.maxWidth);
+        syncContentAreaControls();
+    };
+
+    contentAreaCheckbox.addEventListener('change', saveContentAreaControls);
+    minInput.addEventListener('change', saveContentAreaControls);
+    maxInput.addEventListener('change', saveContentAreaControls);
+
+    syncContentAreaControls();
+    contentAreaSection.append(
+        contentAreaToggle,
+        contentAreaWidths,
+        contentAreaHelp
+    );
+
     const note = document.createElement('div');
     note.className = 'hwus-note';
     note.textContent = 'Changes apply on the next page load.';
 
-    panel.append(title, subtitle, grid, actions, note);
+    panel.append(titleRow, subtitle, grid, actions, contentAreaSection, note);
 
     // The native top-level Preferences menu is a sequence of links and <br>
     // nodes rather than a semantic list. Prepend the panel directly so its
@@ -313,25 +537,89 @@ function HWUS_getCurrentPlayerId() {
         exitContainer.insertAdjacentElement('afterend', clear);
     }
 
-    // Preserve one-line module labels in two-column mode. The decision is
-    // based on the settings panel's own rendered width, not the viewport,
-    // because HoboWars content width can be independently customized.
-    const syncModuleColumns = () => {
-        panel.classList.toggle('hwus-single-column', panel.getBoundingClientRect().width < 370);
+    // Preferences geometry follows the actual content container rather than
+    // viewport width, because .content-area can be independently customized.
+    // Module columns remain governed by the panel's own rendered width.
+    const syncPreferencesGeometry = () => {
+        const contentWidth = content.getBoundingClientRect().width;
+        panel.classList.toggle('hwus-stacked', contentWidth < 700);
+
+        const panelWidth = panel.getBoundingClientRect().width;
+        panel.classList.toggle('hwus-single-column', panelWidth < 370);
     };
 
-    syncModuleColumns();
+    syncPreferencesGeometry();
 
     if (typeof ResizeObserver === 'function') {
-        const observer = new ResizeObserver(syncModuleColumns);
+        const observer = new ResizeObserver(syncPreferencesGeometry);
+        observer.observe(content);
         observer.observe(panel);
     } else {
-        window.addEventListener('resize', syncModuleColumns, { passive: true });
+        window.addEventListener('resize', syncPreferencesGeometry, { passive: true });
     }
 })();
 
 // Prime the player-ID cache anywhere the native chrome exposes a self-profile link.
 HWUS_getCurrentPlayerId();
+
+// Keep the native topbar usable at narrow viewport widths. The Future layout's
+// top-left logo block duplicates Home navigation and consumes enough horizontal
+// space to push the native stat bars off-screen. Remove that block from flow
+// only when the stat-bar geometry proves the viewport no longer accommodates it.
+(function installHWUSTopbarResponsiveTrim() {
+    'use strict';
+
+    const topbar = document.querySelector('.topbar');
+    const topLeft = topbar?.querySelector(':scope > .top-left');
+    const topCenter = topbar?.querySelector(':scope > .top-center');
+
+    if (!topbar || !topLeft || !topCenter) return;
+
+    const style = document.createElement('style');
+    style.id = 'hwus-topbar-responsive-styles';
+    style.textContent = `
+        .topbar.hwus-hide-top-left > .top-left {
+            display: none !important;
+        }
+    `;
+    document.head.appendChild(style);
+
+    let frame = 0;
+
+    const syncTopbarGeometry = () => {
+        frame = 0;
+
+        // Measure .top-center with .top-left participating in layout.
+        // Removing and restoring the class synchronously keeps the test exact
+        // without making the hidden state self-reversing.
+        topbar.classList.remove('hwus-hide-top-left');
+
+        const viewportRight = document.documentElement.clientWidth;
+        const topCenterOverflow =
+            topCenter.getBoundingClientRect().right > viewportRight + 0.5;
+
+        topbar.classList.toggle('hwus-hide-top-left', topCenterOverflow);
+    };
+
+    const scheduleTopbarSync = () => {
+        if (frame) cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(syncTopbarGeometry);
+    };
+
+    scheduleTopbarSync();
+    window.addEventListener('resize', scheduleTopbarSync, { passive: true });
+
+    // Text and injected topbar controls can change the required horizontal
+    // footprint without a viewport resize, so re-evaluate those mutations too.
+    if (typeof MutationObserver === 'function') {
+        const observer = new MutationObserver(scheduleTopbarSync);
+        observer.observe(topCenter, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    }
+})();
 
 // ============================================================================
 // MODULE 1: UFC PENALTY INFO TOGGLE
@@ -1552,6 +1840,8 @@ HWUS_getCurrentPlayerId();
 
     if (!isPikieSelector && !isPikieResult) return;
 
+    ensureMetamorphousFont();
+
     const html = document.documentElement.innerHTML || '';
     const text = document.body ? (document.body.textContent || '') : '';
     const clockEl = document.querySelector('#clock');
@@ -1730,6 +2020,16 @@ HWUS_getCurrentPlayerId();
     function parseMoney(s) {
         const m = String(s || '').match(/\$([0-9,]+)/);
         return m ? parseInt(m[1].replace(/,/g, ''), 10) : 0;
+    }
+
+    function ensureMetamorphousFont() {
+        if (document.getElementById('hwus-font-metamorphous')) return;
+
+        const link = document.createElement('link');
+        link.id = 'hwus-font-metamorphous';
+        link.rel = 'stylesheet';
+        link.href = 'https://fonts.googleapis.com/css2?family=Metamorphous&display=swap';
+        document.head.appendChild(link);
     }
 
     function renderPikie(rows) {
@@ -7292,14 +7592,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '3.4',
+    version: '4.0',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '11bb7dc9a05c8aefc8d01495601d75aa97c8cf3449ccdac6bc98ab2044273439';
+const HWUS_RELEASE_SHA256 = 'bb1334b35c26618246c7688553a6acc609e4b027db252594a461d986dc0d1e34';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -7359,7 +7659,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an official HW Utility Suite v3.4 release, ' +
+        'This installation still identifies itself as an official HW Utility Suite v4.0 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
