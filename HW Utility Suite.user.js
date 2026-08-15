@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.2
+// @version      4.3
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -3347,10 +3347,9 @@ HWUS_getCurrentPlayerId();
   text-align: left;
 }
 .hwa-bank-btn {
-  width: 100%;
   box-sizing: border-box;
-  padding: 5px 4px;
-  border: 1.5px outset;
+  padding: 5px 12px;
+  border: 0;
   border-radius: 3px;
   background: #ddd;
   color: #636363;
@@ -3358,7 +3357,6 @@ HWUS_getCurrentPlayerId();
   font-size: 10px;
   font-weight: bold;
   cursor: pointer;
-  flex: 1 1 80%;
 }
 .hwa-mini-btn {
   white-space: pre;
@@ -3390,7 +3388,7 @@ HWUS_getCurrentPlayerId();
 }
 .hwa-bank-helper {
   display: block;
-  margin: 8px 1px -5px auto;
+  margin: 8px 1px 2px auto;
   border-radius: 4px;
   color: #111;
   font-size: 11px;
