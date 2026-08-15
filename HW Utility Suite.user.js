@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.1
+// @version      4.2
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -1369,9 +1369,9 @@ HWUS_getCurrentPlayerId();
     const FIELD_COLORS = {
         Respect: '#d60b10',
         Level: '#f600f6',
-        Money: '#40cf00',
+        Money: '#3aba00',
         Life: '#0000dd',
-        Record: '#f6b008'
+        Record: '#c58d06'
     };
 
     const RECORD_METRICS = [
@@ -1946,7 +1946,7 @@ HWUS_getCurrentPlayerId();
     const K_PIKIE_PENDING = 'jbgl_pikie_pending_v1';
     const K_PIKIE_LAST_FP = 'jbgl_pikie_last_fp_v1';
 
-    const PIKIE_PANEL_W = 180;
+    const PIKIE_PANEL_W = 160;
 
     const href = String(location.href || '');
     const isPikieSelector =
@@ -2316,6 +2316,7 @@ HWUS_getCurrentPlayerId();
         row.style.color = '#fda';
         row.style.textDecoration = 'underline solid #efefef';
         row.textContent = `${dateKey} < ${pikieName} >`;
+        row.title = row.textContent;
         return row;
     }
 
@@ -2834,15 +2835,6 @@ HWUS_getCurrentPlayerId();
         helper.id = 'hwa-bank-helper';
         helper.className = 'hwa-bank-helper';
 
-        const covers = pending.throughVisit && pending.throughVisit !== pending.fromVisit
-        ? `V${pending.fromVisit}-V${pending.throughVisit}`
-      : `V${pending.fromVisit}`;
-
-        const clear = document.createElement('button');
-        clear.type = 'button';
-        clear.className = 'hwa-mini-btn';
-        clear.textContent = 'CLEAR';
-
         const add = document.createElement('button');
         add.type = 'button';
         add.className = 'hwa-bank-btn';
@@ -2861,16 +2853,21 @@ HWUS_getCurrentPlayerId();
             helper.classList.add('hwa-bank-done');
         });
 
-        clear.addEventListener('click', function () {
-            clearPending();
-            helper.textContent = '+Wellness cleared.';
-            helper.classList.add('hwa-bank-done');
-        });
-
-        helper.appendChild(clear);
         helper.appendChild(add);
 
-        input.insertAdjacentElement('afterend', helper);
+        const form = input.closest('form');
+        const controls = form
+            ? [...form.querySelectorAll('button, input[type="submit"], input[type="button"]')]
+            : [];
+        const withdraw = controls.find(control =>
+            normalizeSpace(control.value || control.textContent).toLowerCase() === 'withdraw'
+        );
+
+        if (withdraw) {
+            withdraw.insertAdjacentElement('afterend', helper);
+        } else {
+            input.insertAdjacentElement('afterend', helper);
+        }
     }
 
     function updateDailyLogFromPaidCost(paidCost) {
@@ -3350,6 +3347,8 @@ HWUS_getCurrentPlayerId();
   text-align: left;
 }
 .hwa-bank-btn {
+  width: 100%;
+  box-sizing: border-box;
   padding: 5px 4px;
   border: 1.5px outset;
   border-radius: 3px;
@@ -3390,13 +3389,11 @@ HWUS_getCurrentPlayerId();
   border-style: inset;
 }
 .hwa-bank-helper {
-  display: flex;
-  justify-content: space-between;
+  display: block;
   margin: 8px 1px -5px auto;
   border-radius: 4px;
   color: #111;
   font-size: 11px;
-  gap: 6px;
 }
 .hwa-bank-done {
   color: #060;
