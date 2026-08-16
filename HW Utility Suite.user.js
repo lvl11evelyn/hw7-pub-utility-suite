@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.3
+// @version      4.4
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -36,7 +36,7 @@ const HWUS_MODULES = Object.freeze([
     [2, 'Feed the Seal'],
     [3, 'Collapsible Thread Replies'],
     [4, 'Player Stats Tracker'],
-    [5, 'Pikie Races Log'],
+    [5, 'Cart Racing'],
     [6, 'Wellness Aid'],
     [7, 'Equipment Redux'],
     [8, 'Personal Hitlist Keybinds'],
@@ -1634,6 +1634,16 @@ HWUS_getCurrentPlayerId();
 
             if (field === 'Record' && entry.currentNumbers?.length >= 4) {
                 for (const metric of RECORD_METRICS) {
+                    const deltaValue = entry.deltas?.[metric.index];
+
+                    if (
+                        !recording.initial &&
+                        Number.isFinite(deltaValue) &&
+                        deltaValue === 0
+                    ) {
+                        continue;
+                    }
+
                     group.append(buildRecordMetricRow(entry, metric, recording.initial));
                 }
                 continue;
@@ -1923,6 +1933,10 @@ HWUS_getCurrentPlayerId();
                 white-space: nowrap;
             }
 
+            .${MODULE}-field-row:last-of-type > .${MODULE}-delta {
+                border-bottom: 0;
+            }
+
             .${MODULE}-empty {
                 color: #bfbfbf;
             }
@@ -1934,8 +1948,8 @@ HWUS_getCurrentPlayerId();
 
 
 // ============================================================================
-// MODULE 5: PIKIE RACES LOG
-// Adds a logging panel for tracking Racing Skill gained in Pikie races.
+// MODULE 5: CART RACING
+// Tracks Pikie race gains and adds an inline Super Cart registered-racers view.
 // ============================================================================
 (function () {
     'use strict';
@@ -1957,9 +1971,15 @@ HWUS_getCurrentPlayerId();
           /[?&]cmd=hill3(?:[&#]|$|&)/i.test(href) &&
           /[?&]do=npc_race(?:[&#]|$)/i.test(href);
 
-    if (!isPikieSelector && !isPikieResult) return;
+    const isCartRoad =
+          /[?&]cmd=hill3(?:[&#]|$|&)/i.test(href) &&
+          /[?&]do=road(?:[&#]|$)/i.test(href);
 
-    ensureMetamorphousFont();
+    if (!isPikieSelector && !isPikieResult && !isCartRoad) return;
+
+    if (isPikieSelector || isPikieResult) {
+        ensureMetamorphousFont();
+    }
 
     const html = document.documentElement.innerHTML || '';
     const text = document.body ? (document.body.textContent || '') : '';
@@ -1978,6 +1998,11 @@ HWUS_getCurrentPlayerId();
     });
 
     function runPikieMode(ctx) {
+        if (isCartRoad) {
+            initRegisteredRacersInline();
+            return;
+        }
+
         const pikieEntries = loadPikieEntries();
 
         if (isPikieSelector) {
@@ -2004,6 +2029,263 @@ HWUS_getCurrentPlayerId();
 
             renderPikie(loadPikieEntries());
         }
+    }
+
+    function initRegisteredRacersInline() {
+        const contentArea = document.querySelector('.content-area');
+        if (!contentArea || document.getElementById('hwus-cart-racers-layout')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'hwus-cart-racers-layout';
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'row';
+        wrapper.style.gap = '20px';
+        wrapper.style.alignItems = 'flex-start';
+
+        const leftCol = document.createElement('div');
+        leftCol.style.flex = '1 1 0';
+        leftCol.style.minWidth = '0';
+
+        while (contentArea.firstChild) {
+            leftCol.appendChild(contentArea.firstChild);
+        }
+
+        removeNativeRegisteredRacersView(leftCol);
+
+        const rightCol = document.createElement('div');
+        rightCol.style.flex = '1 1 0';
+        rightCol.style.minWidth = '300px';
+        rightCol.style.textAlign = 'center';
+
+        const doFetchList = event => {
+            if (event) event.preventDefault();
+
+            rightCol.innerHTML =
+                '<div style="margin-top:20px;"><button class="btn" disabled>Loading...</button></div>';
+
+            const pageUrl = new URL(location.href);
+            const sr = pageUrl.searchParams.get('sr') || '';
+            const listUrl = `game.php?sr=${encodeURIComponent(sr)}&cmd=hill3&do=list`;
+
+            fetch(listUrl)
+                .then(response => response.arrayBuffer())
+                .then(buffer => {
+                    const decoder = new TextDecoder('iso-8859-1');
+                    const html = decoder.decode(buffer);
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    const remoteContent = doc.querySelector('.content-area');
+
+                    if (!remoteContent) {
+                        renderRegisteredRacersError(
+                            rightCol,
+                            'Error loading list.',
+                            'Try Again',
+                            doFetchList
+                        );
+                        return;
+                    }
+
+                    const lines = remoteContent.innerHTML.split(/<br\s*\/?>/i);
+                    const playerId = HWUS_getCurrentPlayerId();
+                    let trackerData = {};
+
+                    try {
+                        const rawData = localStorage.getItem('hw_cart_tracker');
+                        if (rawData) trackerData = JSON.parse(rawData);
+                    } catch {
+                        trackerData = {};
+                    }
+
+                    let introText = '';
+                    const racers = [];
+
+                    for (let i = 0; i < lines.length; i += 1) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+
+                        const match = line.match(
+                            /^(\d+)\.\s*(<a.*?href=".*?ID=(\d+)".*?>.*?<\/a>)\s*using the\s*(<strong>.*?<\/strong>)/i
+                        );
+
+                        if (match) {
+                            const racerId = match[3];
+                            const skillValue =
+                                trackerData[racerId] &&
+                                typeof trackerData[racerId].ls !== 'undefined'
+                                ? parseFloat(trackerData[racerId].ls)
+                                : -1;
+
+                            racers.push({
+                                origPos: match[1],
+                                link: match[2],
+                                id: racerId,
+                                cart: match[4],
+                                skillValue: Number.isFinite(skillValue) ? skillValue : -1
+                            });
+                        } else if (line.includes('These hobos are in the same class')) {
+                            introText = line;
+                        }
+                    }
+
+                    let currentSort = 'groupSkill';
+
+                    const renderRacers = () => {
+                        let displayRacers = [...racers];
+
+                        if (currentSort === 'signup') {
+                            displayRacers.sort(
+                                (a, b) => parseInt(a.origPos, 10) - parseInt(b.origPos, 10)
+                            );
+                        } else {
+                            displayRacers.sort(
+                                (a, b) => parseInt(a.origPos, 10) - parseInt(b.origPos, 10)
+                            );
+
+                            const grouped = [];
+                            for (let i = 0; i < displayRacers.length; i += 10) {
+                                const group = displayRacers.slice(i, i + 10);
+                                group.sort((a, b) => b.skillValue - a.skillValue);
+                                grouped.push(...group);
+                            }
+                            displayRacers = grouped;
+                        }
+
+                        if (displayRacers.length === 0) {
+                            rightCol.innerHTML =
+                                '<div style="text-align:center;padding:20px;">No one in your class is signed up yet.</div>' +
+                                '<button id="hwus-cart-refresh-list" class="btn">Refresh List</button>';
+
+                            rightCol.querySelector('#hwus-cart-refresh-list')
+                                ?.addEventListener('click', doFetchList);
+                            return;
+                        }
+
+                        let tableHtml = `
+                            <div style="margin-bottom:10px;text-align:right;">
+                                <button id="hwus-cart-refresh-list" class="btn" style="padding:4px 10px;font-size:11px;">Refresh List</button>
+                            </div>
+                            <p style="margin-top:0;margin-bottom:10px;text-align:center;">${introText}</p>
+                            <table align="center" width="100%" cellspacing="2" cellpadding="4">
+                                <tbody>
+                                    <tr>
+                                        <td bgcolor="#dddddd" colspan="4" align="center"><strong>Registered Racers</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td bgcolor="#eeeeee" align="center" width="30" style="cursor:pointer;user-select:none;" id="hwus-cart-sort-signup" title="Sort by Sign Up Order"><strong># ${currentSort === 'signup' ? '▼' : ''}</strong></td>
+                                        <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
+                                        <td bgcolor="#eeeeee"><strong>Cart</strong></td>
+                                        <td bgcolor="#eeeeee" align="center" width="100" style="cursor:pointer;user-select:none;" id="hwus-cart-sort-skill" title="Sort by Skill (within Race Groups)"><strong>Skill ${currentSort === 'groupSkill' ? '▼' : ''}</strong></td>
+                                    </tr>
+                        `;
+
+                        displayRacers.forEach((racer, index) => {
+                            const skill = racer.skillValue !== -1
+                                ? racer.skillValue.toFixed(3)
+                                : 'Unknown';
+
+                            const bgColor = racer.id === playerId ? '#fffec8' : '#f0f0f0';
+                            const rowStyle = racer.id === playerId ? 'font-weight:bold;' : '';
+
+                            tableHtml += `
+                                <tr style="${rowStyle}">
+                                    <td bgcolor="${bgColor}" align="center">${racer.origPos}</td>
+                                    <td bgcolor="${bgColor}">${racer.link}</td>
+                                    <td bgcolor="${bgColor}">${racer.cart}</td>
+                                    <td bgcolor="${bgColor}" align="center">${skill}</td>
+                                </tr>
+                            `;
+
+                            if (
+                                currentSort === 'groupSkill' &&
+                                index % 10 === 9 &&
+                                index !== displayRacers.length - 1
+                            ) {
+                                tableHtml +=
+                                    '<tr><td colspan="4" style="height:4px;background:#ccc;border-radius:2px;"></td></tr>';
+                            }
+                        });
+
+                        tableHtml += '</tbody></table>';
+                        rightCol.innerHTML = tableHtml;
+
+                        rightCol.querySelector('#hwus-cart-refresh-list')
+                            ?.addEventListener('click', doFetchList);
+
+                        rightCol.querySelector('#hwus-cart-sort-signup')
+                            ?.addEventListener('click', () => {
+                                currentSort = 'signup';
+                                renderRacers();
+                            });
+
+                        rightCol.querySelector('#hwus-cart-sort-skill')
+                            ?.addEventListener('click', () => {
+                                currentSort = 'groupSkill';
+                                renderRacers();
+                            });
+                    };
+
+                    renderRacers();
+                })
+                .catch(() => {
+                    renderRegisteredRacersError(
+                        rightCol,
+                        'Failed to load list.',
+                        'Try Again',
+                        doFetchList
+                    );
+                });
+        };
+
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'btn';
+        loadBtn.textContent = 'Load Registered Racers';
+        loadBtn.style.padding = '8px 16px';
+        loadBtn.style.marginTop = '20px';
+        loadBtn.addEventListener('click', doFetchList);
+
+        rightCol.appendChild(loadBtn);
+        wrapper.append(leftCol, rightCol);
+        contentArea.appendChild(wrapper);
+    }
+
+    function removeNativeRegisteredRacersView(root) {
+        const viewLink = [...root.querySelectorAll('a[href]')].find(anchor => {
+            if (normalizeSpace(anchor.textContent).toLowerCase() !== 'view') return false;
+
+            try {
+                const target = new URL(anchor.href, location.href);
+                return (
+                    target.searchParams.get('cmd') === 'hill3' &&
+                    target.searchParams.get('do') === 'list'
+                );
+            } catch {
+                return false;
+            }
+        });
+
+        if (!viewLink) return;
+
+        const previous = viewLink.previousSibling;
+        const next = viewLink.nextSibling;
+
+        if (previous?.nodeType === Node.TEXT_NODE) {
+            previous.textContent = previous.textContent.replace(/\[\s*$/, '');
+        }
+
+        if (next?.nodeType === Node.TEXT_NODE) {
+            next.textContent = next.textContent.replace(/^\s*\]/, '');
+        }
+
+        viewLink.remove();
+    }
+
+    function renderRegisteredRacersError(container, message, buttonLabel, handler) {
+        container.innerHTML =
+            `<div style="text-align:center;padding:20px;">${message}</div>` +
+            `<button id="hwus-cart-refresh-list" class="btn">${buttonLabel}</button>`;
+
+        container.querySelector('#hwus-cart-refresh-list')
+            ?.addEventListener('click', handler);
     }
 
     function loadPikieEntries() {
@@ -7706,14 +7988,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.0',
+    version: '4.4',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'bb1334b35c26618246c7688553a6acc609e4b027db252594a461d986dc0d1e34';
+const HWUS_RELEASE_SHA256 = 'c1f0cac55727f8b6092e5f3aca2f6895061bd37a689a9565ce3860d54864a537';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -7773,7 +8055,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an official HW Utility Suite v4.0 release, ' +
+        'This installation still identifies itself as an official HW Utility Suite v4.4 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
