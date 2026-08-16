@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.5
+// @version      4.6
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2037,13 +2037,12 @@ HWUS_getCurrentPlayerId();
 
         const wrapper = document.createElement('div');
         wrapper.id = 'hwus-cart-racers-layout';
-        wrapper.style.display = 'flex';
-        wrapper.style.flexDirection = 'row';
-        wrapper.style.gap = '20px';
-        wrapper.style.alignItems = 'flex-start';
+        wrapper.style.display = 'grid';
+        wrapper.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        wrapper.style.columnGap = '20px';
+        wrapper.style.alignItems = 'start';
 
         const leftCol = document.createElement('div');
-        leftCol.style.flex = '1 1 0';
         leftCol.style.minWidth = '0';
 
         while (contentArea.firstChild) {
@@ -2051,8 +2050,7 @@ HWUS_getCurrentPlayerId();
         }
 
         const rightCol = document.createElement('div');
-        rightCol.style.flex = '1 1 0';
-        rightCol.style.minWidth = '300px';
+        rightCol.style.minWidth = '0';
         rightCol.style.textAlign = 'center';
         rightCol.style.display = 'none';
 
@@ -8017,14 +8015,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.5',
+    version: '4.6',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '44c6958fd3ee30d95965e5945edf915fe2845f489fdbd3d04ed8f5a5c81d4b13';
+const HWUS_RELEASE_SHA256 = '65ffb10f3d58c60fa7fca101b8a15a1ed063d7223378d77aad2c7042374ccf7e';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -8084,7 +8082,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an official HW Utility Suite v4.5 release, ' +
+        'This installation still identifies itself as an official HW Utility Suite v4.6 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
