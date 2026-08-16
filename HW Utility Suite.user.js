@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.4
+// @version      4.5
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2050,18 +2050,49 @@ HWUS_getCurrentPlayerId();
             leftCol.appendChild(contentArea.firstChild);
         }
 
-        removeNativeRegisteredRacersView(leftCol);
-
         const rightCol = document.createElement('div');
         rightCol.style.flex = '1 1 0';
         rightCol.style.minWidth = '300px';
         rightCol.style.textAlign = 'center';
+        rightCol.style.display = 'none';
+
+        let viewButton = null;
+        let racersVisible = false;
+        let racersLoading = false;
+
+        const setButtonState = state => {
+            if (!viewButton) return;
+
+            const isWait = state === 'wait';
+            viewButton.textContent = state === 'hide'
+                ? 'Hide'
+                : isWait
+                ? 'Wait'
+                : 'View';
+            viewButton.disabled = isWait;
+            viewButton.style.opacity = isWait ? '0.5' : '';
+            viewButton.style.cursor = isWait ? 'default' : 'pointer';
+        };
+
+        const hideRacers = event => {
+            if (event) event.preventDefault();
+            if (racersLoading) return;
+
+            rightCol.replaceChildren();
+            rightCol.style.display = 'none';
+            racersVisible = false;
+            setButtonState('view');
+        };
 
         const doFetchList = event => {
             if (event) event.preventDefault();
+            if (racersLoading) return;
 
-            rightCol.innerHTML =
-                '<div style="margin-top:20px;"><button class="btn" disabled>Loading...</button></div>';
+            racersLoading = true;
+            racersVisible = false;
+            setButtonState('wait');
+            rightCol.replaceChildren();
+            rightCol.style.display = 'none';
 
             const pageUrl = new URL(location.href);
             const sr = pageUrl.searchParams.get('sr') || '';
@@ -2076,13 +2107,7 @@ HWUS_getCurrentPlayerId();
                     const remoteContent = doc.querySelector('.content-area');
 
                     if (!remoteContent) {
-                        renderRegisteredRacersError(
-                            rightCol,
-                            'Error loading list.',
-                            'Try Again',
-                            doFetchList
-                        );
-                        return;
+                        throw new Error('Registered Racers content not found.');
                     }
 
                     const lines = remoteContent.innerHTML.split(/<br\s*\/?>/i);
@@ -2152,18 +2177,11 @@ HWUS_getCurrentPlayerId();
 
                         if (displayRacers.length === 0) {
                             rightCol.innerHTML =
-                                '<div style="text-align:center;padding:20px;">No one in your class is signed up yet.</div>' +
-                                '<button id="hwus-cart-refresh-list" class="btn">Refresh List</button>';
-
-                            rightCol.querySelector('#hwus-cart-refresh-list')
-                                ?.addEventListener('click', doFetchList);
+                                '<div style="text-align:center;padding:20px;">No one in your class is signed up yet.</div>';
                             return;
                         }
 
                         let tableHtml = `
-                            <div style="margin-bottom:10px;text-align:right;">
-                                <button id="hwus-cart-refresh-list" class="btn" style="padding:4px 10px;font-size:11px;">Refresh List</button>
-                            </div>
                             <p style="margin-top:0;margin-bottom:10px;text-align:center;">${introText}</p>
                             <table align="center" width="100%" cellspacing="2" cellpadding="4">
                                 <tbody>
@@ -2208,9 +2226,6 @@ HWUS_getCurrentPlayerId();
                         tableHtml += '</tbody></table>';
                         rightCol.innerHTML = tableHtml;
 
-                        rightCol.querySelector('#hwus-cart-refresh-list')
-                            ?.addEventListener('click', doFetchList);
-
                         rightCol.querySelector('#hwus-cart-sort-signup')
                             ?.addEventListener('click', () => {
                                 currentSort = 'signup';
@@ -2225,30 +2240,42 @@ HWUS_getCurrentPlayerId();
                     };
 
                     renderRacers();
+                    rightCol.style.display = '';
+                    racersVisible = true;
+                    setButtonState('hide');
                 })
                 .catch(() => {
-                    renderRegisteredRacersError(
-                        rightCol,
-                        'Failed to load list.',
-                        'Try Again',
-                        doFetchList
-                    );
+                    rightCol.innerHTML =
+                        '<div style="text-align:center;padding:20px;">Failed to load list.</div>';
+                    rightCol.style.display = '';
+                    racersVisible = false;
+                    setButtonState('view');
+                })
+                .finally(() => {
+                    racersLoading = false;
                 });
         };
 
-        const loadBtn = document.createElement('button');
-        loadBtn.className = 'btn';
-        loadBtn.textContent = 'Load Registered Racers';
-        loadBtn.style.padding = '8px 16px';
-        loadBtn.style.marginTop = '20px';
-        loadBtn.addEventListener('click', doFetchList);
+        const toggleRegisteredRacers = event => {
+            if (racersLoading) {
+                event?.preventDefault();
+                return;
+            }
 
-        rightCol.appendChild(loadBtn);
+            if (racersVisible) {
+                hideRacers(event);
+            } else {
+                doFetchList(event);
+            }
+        };
+
+        viewButton = installRegisteredRacersButton(leftCol, toggleRegisteredRacers);
+
         wrapper.append(leftCol, rightCol);
         contentArea.appendChild(wrapper);
     }
 
-    function removeNativeRegisteredRacersView(root) {
+    function installRegisteredRacersButton(root, handler) {
         const viewLink = [...root.querySelectorAll('a[href]')].find(anchor => {
             if (normalizeSpace(anchor.textContent).toLowerCase() !== 'view') return false;
 
@@ -2263,7 +2290,7 @@ HWUS_getCurrentPlayerId();
             }
         });
 
-        if (!viewLink) return;
+        if (!viewLink) return null;
 
         const previous = viewLink.previousSibling;
         const next = viewLink.nextSibling;
@@ -2276,16 +2303,18 @@ HWUS_getCurrentPlayerId();
             next.textContent = next.textContent.replace(/^\s*\]/, '');
         }
 
-        viewLink.remove();
-    }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn';
+        button.textContent = 'View';
+        button.style.padding = '4px 8px';
+        button.style.display = 'inline';
+        button.style.fontFamily = 'Consolas, monospace';
+        button.style.cursor = 'pointer';
+        button.addEventListener('click', handler);
 
-    function renderRegisteredRacersError(container, message, buttonLabel, handler) {
-        container.innerHTML =
-            `<div style="text-align:center;padding:20px;">${message}</div>` +
-            `<button id="hwus-cart-refresh-list" class="btn">${buttonLabel}</button>`;
-
-        container.querySelector('#hwus-cart-refresh-list')
-            ?.addEventListener('click', handler);
+        viewLink.replaceWith(button);
+        return button;
     }
 
     function loadPikieEntries() {
@@ -7988,14 +8017,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.4',
+    version: '4.5',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'c1f0cac55727f8b6092e5f3aca2f6895061bd37a689a9565ce3860d54864a537';
+const HWUS_RELEASE_SHA256 = '44c6958fd3ee30d95965e5945edf915fe2845f489fdbd3d04ed8f5a5c81d4b13';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -8055,7 +8084,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an official HW Utility Suite v4.4 release, ' +
+        'This installation still identifies itself as an official HW Utility Suite v4.5 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
