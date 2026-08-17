@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.6
+// @version      4.9
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -1949,7 +1949,7 @@ HWUS_getCurrentPlayerId();
 
 // ============================================================================
 // MODULE 5: CART RACING
-// Tracks Pikie race gains and adds an inline Super Cart registered-racers view.
+// Tracks Pikie race gains, Super Cart registration, and global Racing Skill.
 // ============================================================================
 (function () {
     'use strict';
@@ -1959,6 +1959,14 @@ HWUS_getCurrentPlayerId();
     const K_PIKIE_ENTRIES = 'jbgl_pikie_entries_v1';
     const K_PIKIE_PENDING = 'jbgl_pikie_pending_v1';
     const K_PIKIE_LAST_FP = 'jbgl_pikie_last_fp_v1';
+
+    const K_CART_MANIFEST = 'hwus_cart_skill_manifest_v1';
+    const K_CART_META = 'hwus_cart_skill_meta_v1';
+    const K_CART_ADVANCES = 'hwus_cart_class_advances_v1';
+    const CART_ITEMS_PER_PAGE = 50;
+    const CART_ACTIVE_WEEKLY_GAIN = 1;
+    const CART_GLOBAL_UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    const CART_ADVANCE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
     const PIKIE_PANEL_W = 160;
 
@@ -1975,7 +1983,11 @@ HWUS_getCurrentPlayerId();
           /[?&]cmd=hill3(?:[&#]|$|&)/i.test(href) &&
           /[?&]do=road(?:[&#]|$)/i.test(href);
 
-    if (!isPikieSelector && !isPikieResult && !isCartRoad) return;
+    const isCartHof =
+          /[?&]cmd=hill3(?:[&#]|$|&)/i.test(href) &&
+          /[?&]do=hof(?:[&#]|$)/i.test(href);
+
+    if (!isPikieSelector && !isPikieResult && !isCartRoad && !isCartHof) return;
 
     if (isPikieSelector || isPikieResult) {
         ensureMetamorphousFont();
@@ -1988,7 +2000,7 @@ HWUS_getCurrentPlayerId();
     const monthText = getMonthText(text);
     const dayText = String(getDayText(text)).padStart(2, '0');
 
-    runPikieMode({
+    runCartMode({
         href,
         html,
         text,
@@ -1997,9 +2009,14 @@ HWUS_getCurrentPlayerId();
         dayText
     });
 
-    function runPikieMode(ctx) {
+    function runCartMode(ctx) {
         if (isCartRoad) {
             initRegisteredRacersInline();
+            return;
+        }
+
+        if (isCartHof) {
+            initGlobalRacingSkillTracker();
             return;
         }
 
@@ -2097,11 +2114,14 @@ HWUS_getCurrentPlayerId();
             const listUrl = `game.php?sr=${encodeURIComponent(sr)}&cmd=hill3&do=list`;
 
             fetch(listUrl)
-                .then(response => response.arrayBuffer())
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response.arrayBuffer();
+                })
                 .then(buffer => {
                     const decoder = new TextDecoder('iso-8859-1');
-                    const html = decoder.decode(buffer);
-                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    const fetchedHtml = decoder.decode(buffer);
+                    const doc = new DOMParser().parseFromString(fetchedHtml, 'text/html');
                     const remoteContent = doc.querySelector('.content-area');
 
                     if (!remoteContent) {
@@ -2110,15 +2130,7 @@ HWUS_getCurrentPlayerId();
 
                     const lines = remoteContent.innerHTML.split(/<br\s*\/?>/i);
                     const playerId = HWUS_getCurrentPlayerId();
-                    let trackerData = {};
-
-                    try {
-                        const rawData = localStorage.getItem('hw_cart_tracker');
-                        if (rawData) trackerData = JSON.parse(rawData);
-                    } catch {
-                        trackerData = {};
-                    }
-
+                    const manifest = loadCartManifest();
                     let introText = '';
                     const racers = [];
 
@@ -2132,11 +2144,8 @@ HWUS_getCurrentPlayerId();
 
                         if (match) {
                             const racerId = match[3];
-                            const skillValue =
-                                trackerData[racerId] &&
-                                typeof trackerData[racerId].ls !== 'undefined'
-                                ? parseFloat(trackerData[racerId].ls)
-                                : -1;
+                            const manifestEntry = manifest[racerId];
+                            const skillValue = Number(manifestEntry?.lastSkill);
 
                             racers.push({
                                 origPos: match[1],
@@ -2173,64 +2182,78 @@ HWUS_getCurrentPlayerId();
                             displayRacers = grouped;
                         }
 
+                        rightCol.replaceChildren();
+
                         if (displayRacers.length === 0) {
-                            rightCol.innerHTML =
-                                '<div style="text-align:center;padding:20px;">No one in your class is signed up yet.</div>';
+                            const empty = document.createElement('div');
+                            empty.style.padding = '20px';
+                            empty.textContent = 'No one in your class is signed up yet.';
+                            rightCol.appendChild(empty);
                             return;
                         }
 
-                        let tableHtml = `
-                            <p style="margin-top:0;margin-bottom:10px;text-align:center;">${introText}</p>
-                            <table align="center" width="100%" cellspacing="2" cellpadding="4">
-                                <tbody>
-                                    <tr>
-                                        <td bgcolor="#dddddd" colspan="4" align="center"><strong>Registered Racers</strong></td>
-                                    </tr>
-                                    <tr>
-                                        <td bgcolor="#eeeeee" align="center" width="30" style="cursor:pointer;user-select:none;" id="hwus-cart-sort-signup" title="Sort by Sign Up Order"><strong># ${currentSort === 'signup' ? '▼' : ''}</strong></td>
-                                        <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
-                                        <td bgcolor="#eeeeee"><strong>Cart</strong></td>
-                                        <td bgcolor="#eeeeee" align="center" width="100" style="cursor:pointer;user-select:none;" id="hwus-cart-sort-skill" title="Sort by Skill (within Race Groups)"><strong>Skill ${currentSort === 'groupSkill' ? '▼' : ''}</strong></td>
-                                    </tr>
+                        const intro = document.createElement('p');
+                        intro.style.margin = '0 0 10px';
+                        intro.textContent = normalizeSpace(
+                            new DOMParser().parseFromString(introText || '', 'text/html').body.textContent || ''
+                        );
+
+                        const table = document.createElement('table');
+                        table.align = 'center';
+                        table.width = '100%';
+                        table.cellSpacing = '2';
+                        table.cellPadding = '4';
+
+                        const tbody = document.createElement('tbody');
+                        tbody.innerHTML = `
+                            <tr>
+                                <td bgcolor="#dddddd" colspan="4" align="center"><strong>Registered Racers</strong></td>
+                            </tr>
+                            <tr>
+                                <td bgcolor="#eeeeee" align="center" width="30" style="cursor:pointer;user-select:none;" data-cart-sort="signup" title="Sort by Sign Up Order"><strong># ${currentSort === 'signup' ? '▼' : ''}</strong></td>
+                                <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
+                                <td bgcolor="#eeeeee"><strong>Cart</strong></td>
+                                <td bgcolor="#eeeeee" align="center" width="100" style="cursor:pointer;user-select:none;" data-cart-sort="skill" title="Sort by Skill (within Race Groups)"><strong>Skill ${currentSort === 'groupSkill' ? '▼' : ''}</strong></td>
+                            </tr>
                         `;
 
                         displayRacers.forEach((racer, index) => {
+                            const tr = document.createElement('tr');
+                            if (racer.id === playerId) tr.style.fontWeight = 'bold';
+                            const bgColor = racer.id === playerId ? '#fffec8' : '#f0f0f0';
                             const skill = racer.skillValue !== -1
                                 ? racer.skillValue.toFixed(3)
                                 : 'Unknown';
 
-                            const bgColor = racer.id === playerId ? '#fffec8' : '#f0f0f0';
-                            const rowStyle = racer.id === playerId ? 'font-weight:bold;' : '';
-
-                            tableHtml += `
-                                <tr style="${rowStyle}">
-                                    <td bgcolor="${bgColor}" align="center">${racer.origPos}</td>
-                                    <td bgcolor="${bgColor}">${racer.link}</td>
-                                    <td bgcolor="${bgColor}">${racer.cart}</td>
-                                    <td bgcolor="${bgColor}" align="center">${skill}</td>
-                                </tr>
+                            tr.innerHTML = `
+                                <td bgcolor="${bgColor}" align="center">${racer.origPos}</td>
+                                <td bgcolor="${bgColor}">${racer.link}</td>
+                                <td bgcolor="${bgColor}">${racer.cart}</td>
+                                <td bgcolor="${bgColor}" align="center">${skill}</td>
                             `;
+                            tbody.appendChild(tr);
 
                             if (
                                 currentSort === 'groupSkill' &&
                                 index % 10 === 9 &&
                                 index !== displayRacers.length - 1
                             ) {
-                                tableHtml +=
-                                    '<tr><td colspan="4" style="height:4px;background:#ccc;border-radius:2px;"></td></tr>';
+                                const sep = document.createElement('tr');
+                                sep.innerHTML = '<td colspan="4" style="height:4px;background:#ccc;border-radius:2px;"></td>';
+                                tbody.appendChild(sep);
                             }
                         });
 
-                        tableHtml += '</tbody></table>';
-                        rightCol.innerHTML = tableHtml;
+                        table.appendChild(tbody);
+                        rightCol.append(intro, table);
 
-                        rightCol.querySelector('#hwus-cart-sort-signup')
+                        tbody.querySelector('[data-cart-sort="signup"]')
                             ?.addEventListener('click', () => {
                                 currentSort = 'signup';
                                 renderRacers();
                             });
 
-                        rightCol.querySelector('#hwus-cart-sort-skill')
+                        tbody.querySelector('[data-cart-sort="skill"]')
                             ?.addEventListener('click', () => {
                                 currentSort = 'groupSkill';
                                 renderRacers();
@@ -2240,40 +2263,28 @@ HWUS_getCurrentPlayerId();
                     renderRacers();
                     rightCol.style.display = '';
                     racersVisible = true;
+                    racersLoading = false;
                     setButtonState('hide');
                 })
                 .catch(() => {
-                    rightCol.innerHTML =
-                        '<div style="text-align:center;padding:20px;">Failed to load list.</div>';
-                    rightCol.style.display = '';
-                    racersVisible = false;
-                    setButtonState('view');
-                })
-                .finally(() => {
                     racersLoading = false;
+                    racersVisible = false;
+                    rightCol.replaceChildren();
+                    rightCol.style.display = 'none';
+                    setButtonState('view');
                 });
         };
 
-        const toggleRegisteredRacers = event => {
-            if (racersLoading) {
-                event?.preventDefault();
-                return;
-            }
-
-            if (racersVisible) {
-                hideRacers(event);
-            } else {
-                doFetchList(event);
-            }
-        };
-
-        viewButton = installRegisteredRacersButton(leftCol, toggleRegisteredRacers);
+        viewButton = replaceNativeRegisteredRacersView(leftCol, () => {
+            if (racersVisible) hideRacers();
+            else doFetchList();
+        });
 
         wrapper.append(leftCol, rightCol);
         contentArea.appendChild(wrapper);
     }
 
-    function installRegisteredRacersButton(root, handler) {
+    function replaceNativeRegisteredRacersView(root, handler) {
         const viewLink = [...root.querySelectorAll('a[href]')].find(anchor => {
             if (normalizeSpace(anchor.textContent).toLowerCase() !== 'view') return false;
 
@@ -2308,11 +2319,1077 @@ HWUS_getCurrentPlayerId();
         button.style.padding = '4px 8px';
         button.style.display = 'inline';
         button.style.fontFamily = 'Consolas, monospace';
-        button.style.cursor = 'pointer';
         button.addEventListener('click', handler);
 
         viewLink.replaceWith(button);
         return button;
+    }
+
+    function initGlobalRacingSkillTracker() {
+        const content = document.querySelector('.content-area');
+        if (!content || document.getElementById('hwus-cart-global-tracker')) return;
+
+        const nativeTable = findHofTable(document);
+        if (!nativeTable) return;
+
+        const currentPageNumber = getCurrentHofPageNumber();
+        const totalPages = getTotalHofPages(content);
+        const observedAt = Date.now();
+
+        // A manually-viewed HOF page is also a valid authoritative observation.
+        const currentRows = parseHofTable(nativeTable, currentPageNumber);
+        if (currentRows.length) {
+            persistCartPage(currentPageNumber, currentRows, observedAt);
+            resolveFailedPage(currentPageNumber);
+        }
+
+        injectCartTrackerStyles();
+        injectHofNavigation(nativeTable, currentPageNumber, totalPages);
+
+        const tracker = document.createElement('section');
+        tracker.id = 'hwus-cart-global-tracker';
+
+        const headerGrid = document.createElement('div');
+        headerGrid.className = 'hwus-cart-header-grid';
+
+        const timestampLine = document.createElement('div');
+        timestampLine.className = 'hwus-cart-global-time';
+
+        const actionLine = document.createElement('div');
+        actionLine.className = 'hwus-cart-update-action';
+        actionLine.appendChild(document.createTextNode('Update now? '));
+
+        const updateButton = document.createElement('button');
+        updateButton.type = 'button';
+        updateButton.className = 'btn';
+        updateButton.textContent = 'Update All';
+        actionLine.appendChild(updateButton);
+
+        const title = document.createElement('div');
+        title.className = 'hwus-cart-tracker-title';
+        title.innerHTML = '<strong>Super-Cart Racing Skill Tracker</strong>';
+
+        const headerSpacer = document.createElement('div');
+
+        headerGrid.append(timestampLine, actionLine, title, headerSpacer);
+
+        const failureBox = document.createElement('div');
+        failureBox.className = 'hwus-cart-failures';
+
+        const summaryDiv = document.createElement('div');
+        summaryDiv.className = 'hwus-cart-summary-wrap';
+
+        const controlsDiv = document.createElement('div');
+        controlsDiv.className = 'hwus-cart-controls';
+
+        const skillToggle = document.createElement('button');
+        skillToggle.type = 'button';
+        skillToggle.className = 'btn hwus-cart-section-toggle';
+
+        const paginationDiv = document.createElement('div');
+        paginationDiv.className = 'hwus-cart-pagination';
+
+        const dataTable = document.createElement('table');
+        dataTable.align = 'center';
+        dataTable.width = '80%';
+        dataTable.cellSpacing = '2';
+        dataTable.cellPadding = '4';
+        dataTable.style.marginBottom = '12px';
+
+        const advancesToggle = document.createElement('button');
+        advancesToggle.type = 'button';
+        advancesToggle.className = 'btn hwus-cart-section-toggle hwus-cart-advances-toggle';
+
+        const advancesWrap = document.createElement('div');
+        advancesWrap.className = 'hwus-cart-advances-wrap';
+
+        tracker.append(
+            headerGrid,
+            failureBox,
+            summaryDiv,
+            controlsDiv,
+            skillToggle,
+            paginationDiv,
+            dataTable,
+            advancesToggle,
+            advancesWrap
+        );
+
+        const backCenter = [...content.querySelectorAll('center')].find(center =>
+            center.querySelector('a[href*="cmd=hill3"]')
+        );
+
+        if (backCenter) {
+            backCenter.insertAdjacentElement('beforebegin', tracker);
+        } else {
+            content.appendChild(tracker);
+        }
+
+        let state = loadCartUiState();
+        let updateCooldownTimer = null;
+
+        const refreshUpdateState = () => {
+            if (updateCooldownTimer !== null) {
+                window.clearTimeout(updateCooldownTimer);
+                updateCooldownTimer = null;
+            }
+
+            const meta = loadCartMeta();
+            const remainingMs = renderGlobalUpdateState(
+                timestampLine,
+                updateButton,
+                failureBox,
+                meta
+            );
+
+            if (remainingMs > 0 && !meta.failedPages.length) {
+                const delay = remainingMs >= 60 * 60 * 1000 ? 60 * 1000 : 1000;
+                updateCooldownTimer = window.setTimeout(refreshUpdateState, delay);
+            }
+        };
+
+        const renderAll = () => {
+            const manifest = loadCartManifest();
+            refreshUpdateState();
+            renderCartSummary(summaryDiv, manifest);
+            controlsDiv.style.display = state.skillGainsOpen ? 'block' : 'none';
+            if (state.skillGainsOpen) {
+                renderCartControls(controlsDiv, state, nextState => {
+                    state = nextState;
+                    saveCartUiState(state);
+                    renderAll();
+                });
+            } else {
+                controlsDiv.replaceChildren();
+            }
+
+            skillToggle.textContent = state.skillGainsOpen ? 'Hide Skill Gains' : 'Show Skill Gains';
+            paginationDiv.style.display = state.skillGainsOpen ? 'block' : 'none';
+            dataTable.style.display = state.skillGainsOpen ? 'table' : 'none';
+
+            if (state.skillGainsOpen) {
+                renderCartSkillTable(dataTable, paginationDiv, manifest, state, nextState => {
+                    state = nextState;
+                    saveCartUiState(state);
+                    renderAll();
+                });
+            } else {
+                paginationDiv.replaceChildren();
+                dataTable.replaceChildren();
+            }
+
+            advancesToggle.textContent = state.advancesOpen
+                ? 'Hide Which Racers Advanced'
+                : 'Show Which Racers Advanced';
+            advancesWrap.style.display = state.advancesOpen ? 'block' : 'none';
+            if (state.advancesOpen) renderCartClassAdvances(advancesWrap);
+            else advancesWrap.replaceChildren();
+        };
+
+        skillToggle.addEventListener('click', () => {
+            state = { ...state, skillGainsOpen: !state.skillGainsOpen };
+            saveCartUiState(state);
+            renderAll();
+        });
+
+        advancesToggle.addEventListener('click', () => {
+            state = { ...state, advancesOpen: !state.advancesOpen };
+            saveCartUiState(state);
+            renderAll();
+        });
+
+        renderAll();
+
+        updateButton.addEventListener('click', async event => {
+            event.preventDefault();
+            if (updateButton.disabled) return;
+
+            updateButton.disabled = true;
+            updateButton.style.opacity = '0.55';
+            updateButton.style.cursor = 'default';
+            updateButton.style.pointerEvents = 'none';
+
+            let dots = 1;
+            updateButton.textContent = 'fetching.';
+            const loadingTimer = window.setInterval(() => {
+                dots = dots >= 3 ? 1 : dots + 1;
+                updateButton.textContent = `fetching${'.'.repeat(dots)}`;
+            }, 400);
+
+            const sweepStartedAt = Date.now();
+            const failedPages = [];
+            const sr = new URL(location.href).searchParams.get('sr') || '';
+
+            for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+                try {
+                    let rows;
+
+                    if (pageNumber === currentPageNumber) {
+                        rows = parseHofTable(nativeTable, pageNumber);
+                    } else {
+                        const pageUrl = buildHofPageUrl(sr, pageNumber);
+                        const response = await fetch(pageUrl);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                        const buffer = await response.arrayBuffer();
+                        const decoder = new TextDecoder('iso-8859-1');
+                        const fetchedHtml = decoder.decode(buffer);
+                        const doc = new DOMParser().parseFromString(fetchedHtml, 'text/html');
+                        const table = findHofTable(doc);
+                        if (!table) throw new Error('HOF table not found.');
+                        rows = parseHofTable(table, pageNumber);
+                    }
+
+                    if (!rows.length) throw new Error('No HOF rows parsed.');
+                    persistCartPage(pageNumber, rows, Date.now());
+                } catch {
+                    failedPages.push(pageNumber);
+                }
+            }
+
+            window.clearInterval(loadingTimer);
+
+            const meta = loadCartMeta();
+            meta.lastSweepAttempt = sweepStartedAt;
+            meta.totalPages = totalPages;
+            meta.failedPages = failedPages;
+
+            if (failedPages.length === 0) {
+                meta.lastGlobalUpdate = getGameDateTimeLabel();
+                meta.lastGlobalUpdateAt = Date.now();
+            }
+
+            saveCartMeta(meta);
+
+            updateButton.textContent = 'Complete';
+            updateButton.disabled = true;
+            updateButton.style.opacity = '0.55';
+            updateButton.style.cursor = 'default';
+            updateButton.style.pointerEvents = 'none';
+
+            if (failedPages.length) {
+                renderAll();
+            } else {
+                window.setTimeout(renderAll, 1200);
+            }
+        });
+    }
+
+    function findHofTable(root) {
+        return [...root.querySelectorAll('table')].find(table => {
+            const firstRow = table.rows?.[0];
+            const header = normalizeSpace(firstRow?.textContent || '');
+            return /Top Hobos \(for super-cart racing\)/i.test(header);
+        }) || null;
+    }
+
+    function injectHofNavigation(nativeTable, currentPageNumber, totalPages) {
+        if (document.getElementById('hwus-cart-hof-nav')) return;
+
+        const manifest = loadCartManifest();
+        const currentPlayerId = HWUS_getCurrentPlayerId();
+        const playerPage = Number(manifest[currentPlayerId]?.page) || 0;
+        const sr = new URL(location.href).searchParams.get('sr') || '';
+
+        const nav = document.createElement('div');
+        nav.id = 'hwus-cart-hof-nav';
+        nav.className = 'hwus-cart-hof-nav';
+
+        const makeButton = (label, targetPage, disabled) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn';
+            button.textContent = label;
+            button.disabled = Boolean(disabled);
+            if (button.disabled) {
+                button.style.opacity = '0.55';
+                button.style.cursor = 'default';
+                button.style.pointerEvents = 'none';
+            } else {
+                button.addEventListener('click', () => {
+                    location.href = buildHofPageUrl(sr, targetPage);
+                });
+            }
+            return button;
+        };
+
+        const left = document.createElement('div');
+        left.appendChild(makeButton('<< Previous', currentPageNumber - 1, currentPageNumber <= 1));
+
+        const center = document.createElement('div');
+        center.appendChild(makeButton(
+            '< Jump To Your Page >',
+            playerPage,
+            !playerPage || playerPage === currentPageNumber
+        ));
+
+        const right = document.createElement('div');
+        right.appendChild(makeButton('Next >>', currentPageNumber + 1, currentPageNumber >= totalPages));
+
+        nav.append(left, center, right);
+        nativeTable.insertAdjacentElement('afterend', nav);
+    }
+
+    function parseHofTable(table, pageNumber) {
+        const rows = [];
+
+        for (const row of [...table.rows].slice(2)) {
+            const cells = row.cells;
+            if (!cells || cells.length !== 3) continue;
+
+            const link = cells[0].querySelector('a[href*="ID="]');
+            const id = HWUS_extractPlayerId(link);
+            const name = normalizeSpace(link?.textContent || '');
+            const skill = Number(normalizeSpace(cells[1].textContent).replace(/,/g, ''));
+            const rallyLevel = normalizeSpace(cells[2].textContent);
+
+            if (!id || !name || !Number.isFinite(skill) || !/^\d+$/.test(rallyLevel)) continue;
+
+            rows.push({
+                id,
+                name,
+                skill,
+                rallyLevel,
+                page: pageNumber
+            });
+        }
+
+        return rows;
+    }
+
+    function getCurrentHofPageNumber() {
+        const url = new URL(location.href);
+        const pageParam = Number.parseInt(url.searchParams.get('page') || '0', 10);
+        return Number.isFinite(pageParam) && pageParam >= 0 ? pageParam + 1 : 1;
+    }
+
+    function getTotalHofPages(content) {
+        let maxPage = 1;
+
+        for (const link of content.querySelectorAll('a[href*="cmd=hill3"][href*="do=hof"]')) {
+            try {
+                const url = new URL(link.href, location.href);
+                const page = Number.parseInt(url.searchParams.get('page') || '0', 10) + 1;
+                if (Number.isFinite(page)) maxPage = Math.max(maxPage, page);
+            } catch {
+                // Ignore malformed pagination links.
+            }
+        }
+
+        return maxPage;
+    }
+
+    function buildHofPageUrl(sr, pageNumber) {
+        const url = new URL(location.pathname, location.origin);
+        if (sr) url.searchParams.set('sr', sr);
+        url.searchParams.set('cmd', 'hill3');
+        url.searchParams.set('do', 'hof');
+        if (pageNumber > 1) url.searchParams.set('page', String(pageNumber - 1));
+        return url.href;
+    }
+
+    function loadCartManifest() {
+        try {
+            const raw = GM_getValue(K_CART_MANIFEST, '{}');
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                ? parsed
+                : {};
+        } catch {
+            return {};
+        }
+    }
+
+    function saveCartManifest(manifest) {
+        GM_setValue(K_CART_MANIFEST, JSON.stringify(manifest || {}));
+    }
+
+    function loadCartMeta() {
+        try {
+            const raw = GM_getValue(K_CART_META, '{}');
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            const meta = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                ? parsed
+                : {};
+
+            return {
+                lastGlobalUpdate: String(meta.lastGlobalUpdate || ''),
+                lastGlobalUpdateAt: Number(meta.lastGlobalUpdateAt) || 0,
+                lastSweepAttempt: Number(meta.lastSweepAttempt) || 0,
+                totalPages: Number(meta.totalPages) || 0,
+                failedPages: Array.isArray(meta.failedPages)
+                    ? [...new Set(meta.failedPages.map(Number).filter(Number.isFinite))].sort((a, b) => a - b)
+                    : []
+            };
+        } catch {
+            return {
+                lastGlobalUpdate: '',
+                lastGlobalUpdateAt: 0,
+                lastSweepAttempt: 0,
+                totalPages: 0,
+                failedPages: []
+            };
+        }
+    }
+
+    function saveCartMeta(meta) {
+        GM_setValue(K_CART_META, JSON.stringify(meta || {}));
+    }
+
+    function getCurrentWeekStart() {
+        const now = new Date();
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Australia/Brisbane',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            weekday: 'short'
+        }).formatToParts(now);
+
+        const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        const date = new Date(Date.UTC(
+            Number(values.year),
+            Number(values.month) - 1,
+            Number(values.day)
+        ));
+        const day = date.getUTCDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        date.setUTCDate(date.getUTCDate() + diff);
+        return date.getTime();
+    }
+
+    function loadCartClassAdvances() {
+        try {
+            const raw = GM_getValue(K_CART_ADVANCES, '[]');
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function saveCartClassAdvances(rows) {
+        GM_setValue(K_CART_ADVANCES, JSON.stringify(Array.isArray(rows) ? rows : []));
+    }
+
+    function pruneCartClassAdvances(rows, now = Date.now()) {
+        const cutoff = now - CART_ADVANCE_WINDOW_MS;
+        return rows.filter(row => Number(row.detectedAt) >= cutoff);
+    }
+
+    function recordCartClassAdvance(prior, row, detectedAt) {
+        const fromClass = Number(prior?.rallyLevel);
+        const toClass = Number(row?.rallyLevel);
+        if (!Number.isFinite(fromClass) || !Number.isFinite(toClass) || toClass <= fromClass) return;
+
+        const advances = pruneCartClassAdvances(loadCartClassAdvances(), detectedAt);
+        advances.push({
+            playerId: row.id,
+            name: row.name,
+            fromClass,
+            toClass,
+            detectedAt,
+            detectedLabel: getGameDateTimeLabel()
+        });
+        saveCartClassAdvances(advances);
+    }
+
+    function persistCartPage(pageNumber, rows, observedAt) {
+        const manifest = loadCartManifest();
+        const currentWeekStart = getCurrentWeekStart();
+
+        for (const row of rows) {
+            const prior = manifest[row.id];
+
+            if (!prior) {
+                manifest[row.id] = {
+                    name: row.name,
+                    rallyLevel: row.rallyLevel,
+                    page: pageNumber,
+                    firstSeenAt: observedAt,
+                    firstSkill: row.skill,
+                    lastSeenAt: observedAt,
+                    lastSkill: row.skill,
+                    weekStartAt: currentWeekStart,
+                    weekStartSkill: row.skill
+                };
+                continue;
+            }
+
+            recordCartClassAdvance(prior, row, observedAt);
+
+            const weekStartAt = Number(prior.weekStartAt) || 0;
+            let weekStartSkill = Number(prior.weekStartSkill);
+
+            if (weekStartAt < currentWeekStart || !Number.isFinite(weekStartSkill)) {
+                weekStartSkill = Number(prior.lastSkill);
+                if (!Number.isFinite(weekStartSkill)) weekStartSkill = row.skill;
+            }
+
+            manifest[row.id] = {
+                ...prior,
+                name: row.name,
+                rallyLevel: row.rallyLevel,
+                page: pageNumber,
+                firstSeenAt: Number(prior.firstSeenAt) || observedAt,
+                firstSkill: Number.isFinite(Number(prior.firstSkill))
+                    ? Number(prior.firstSkill)
+                    : row.skill,
+                lastSeenAt: observedAt,
+                lastSkill: row.skill,
+                weekStartAt: currentWeekStart,
+                weekStartSkill
+            };
+        }
+
+        saveCartManifest(manifest);
+        saveCartClassAdvances(pruneCartClassAdvances(loadCartClassAdvances(), observedAt));
+    }
+
+    function resolveFailedPage(pageNumber) {
+        const meta = loadCartMeta();
+        if (!meta.failedPages.includes(pageNumber)) return;
+
+        meta.failedPages = meta.failedPages.filter(page => page !== pageNumber);
+
+        if (meta.failedPages.length === 0) {
+            meta.lastGlobalUpdate = getGameDateTimeLabel();
+            meta.lastGlobalUpdateAt = Date.now();
+        }
+
+        saveCartMeta(meta);
+    }
+
+    function getGameDateTimeLabel() {
+        const dateText = normalizeSpace(document.querySelector('.clock i')?.textContent || '');
+        const clockText = normalizeSpace(document.querySelector('#clock')?.textContent || '');
+        const dateMatch = dateText.match(/([A-Za-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?/i);
+        const timeMatch = clockText.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)/i);
+
+        if (dateMatch && timeMatch) {
+            return `${String(dateMatch[2]).padStart(2, '0')} ${dateMatch[1].slice(0, 3).toUpperCase()} ${Number(timeMatch[1])}:${timeMatch[2]} ${timeMatch[3].toUpperCase()}`;
+        }
+
+        return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Australia/Brisbane',
+            day: '2-digit',
+            month: 'short',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).format(new Date()).replace(',', '').toUpperCase();
+    }
+
+    function formatGlobalUpdateCooldown(ms) {
+        const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        if (totalSeconds >= 3600) {
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        }
+
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function renderGlobalUpdateState(timestampLine, button, failureBox, meta) {
+        timestampLine.textContent = `Last Global Racing Skill Update: ${meta.lastGlobalUpdate || 'Never'}`;
+        failureBox.replaceChildren();
+
+        button.style.opacity = '';
+        button.style.cursor = 'pointer';
+        button.style.pointerEvents = '';
+
+        if (meta.failedPages.length) {
+            button.disabled = true;
+            button.textContent = 'Complete';
+            button.style.opacity = '0.55';
+            button.style.cursor = 'default';
+            button.style.pointerEvents = 'none';
+
+            const cooldownNote = document.createElement('div');
+            cooldownNote.textContent = 'Cooldown begins after failed pages are manually viewed.';
+
+            const count = meta.failedPages.length;
+            const first = document.createElement('div');
+            first.textContent = `${count} Page(s) unsuccessfully updated.`;
+
+            const second = document.createElement('div');
+            second.appendChild(document.createTextNode('Failed page(s): '));
+
+            meta.failedPages.forEach((pageNumber, index) => {
+                if (index) second.appendChild(document.createTextNode(', '));
+                const link = document.createElement('a');
+                link.href = buildHofPageUrl(new URL(location.href).searchParams.get('sr') || '', pageNumber);
+                link.textContent = String(pageNumber);
+                second.appendChild(link);
+            });
+            second.appendChild(document.createTextNode('.'));
+
+            const third = document.createElement('div');
+            third.textContent = 'View failed pages to update manually.';
+
+            failureBox.append(cooldownNote, first, second, third);
+            return 0;
+        }
+
+        const lastGlobalUpdateAt = Number(meta.lastGlobalUpdateAt) || 0;
+        const remainingMs = lastGlobalUpdateAt
+            ? Math.max(0, CART_GLOBAL_UPDATE_COOLDOWN_MS - (Date.now() - lastGlobalUpdateAt))
+            : 0;
+
+        if (remainingMs > 0) {
+            button.disabled = true;
+            button.textContent = formatGlobalUpdateCooldown(remainingMs);
+            button.style.opacity = '0.55';
+            button.style.cursor = 'default';
+            button.style.pointerEvents = 'none';
+            return remainingMs;
+        }
+
+        button.disabled = false;
+        button.textContent = 'Update All';
+        return 0;
+    }
+
+    function renderCartSummary(container, manifest) {
+        container.replaceChildren();
+
+        const data = buildCartData(manifest);
+        const totalCounts = {};
+        const activeCounts = {};
+
+        for (const row of data) {
+            totalCounts[row.cls] = (totalCounts[row.cls] || 0) + 1;
+            if (row.wgained >= CART_ACTIVE_WEEKLY_GAIN) {
+                activeCounts[row.cls] = (activeCounts[row.cls] || 0) + 1;
+            }
+        }
+
+        const table = document.createElement('table');
+        table.align = 'center';
+        table.width = '80%';
+        table.cellSpacing = '2';
+        table.cellPadding = '4';
+
+        let totalActive = 0;
+        let globalTotal = 0;
+        const classHeaders = [];
+        const activeCells = [];
+        const totalCells = [];
+
+        for (let level = 1; level <= 10; level += 1) {
+            const active = activeCounts[String(level)] || 0;
+            const total = totalCounts[String(level)] || 0;
+            totalActive += active;
+            globalTotal += total;
+            classHeaders.push(`<td bgcolor="#eeeeee" align="center"><strong>${level}</strong></td>`);
+            activeCells.push(`<td bgcolor="#f0f0f0" align="center">${active}</td>`);
+            totalCells.push(`<td bgcolor="#f0f0f0" align="center">${total}</td>`);
+        }
+
+        table.innerHTML = `
+            <tbody>
+                <tr>
+                    <td bgcolor="#dddddd" colspan="12" align="center"><strong>Racers Summary</strong></td>
+                </tr>
+                <tr>
+                    <td bgcolor="#eeeeee" align="center"><strong>Class</strong></td>
+                    ${classHeaders.join('')}
+                    <td bgcolor="#eeeeee" align="center"><strong>Total</strong></td>
+                </tr>
+                <tr>
+                    <td bgcolor="#eeeeee" align="center"><strong>Active</strong></td>
+                    ${activeCells.join('')}
+                    <td bgcolor="#e0e0e0" align="center"><strong>${totalActive}</strong></td>
+                </tr>
+                <tr>
+                    <td bgcolor="#eeeeee" align="center"><strong>Racers</strong></td>
+                    ${totalCells.join('')}
+                    <td bgcolor="#e0e0e0" align="center"><strong>${globalTotal}</strong></td>
+                </tr>
+            </tbody>
+        `;
+
+        container.appendChild(table);
+    }
+
+    function renderCartControls(container, state, onChange) {
+        container.replaceChildren();
+
+        const filterLabel = document.createElement('label');
+        filterLabel.style.fontWeight = 'bold';
+        filterLabel.textContent = 'Filter by Class (Rally Level): ';
+
+        const select = document.createElement('select');
+        select.innerHTML = '<option value="All">All</option>';
+        for (let level = 1; level <= 10; level += 1) {
+            const option = document.createElement('option');
+            option.value = String(level);
+            option.textContent = String(level);
+            select.appendChild(option);
+        }
+        select.value = state.filterClass;
+
+        const weeklyLabel = document.createElement('label');
+        weeklyLabel.style.marginLeft = '15px';
+        weeklyLabel.style.fontSize = '12px';
+        weeklyLabel.style.cursor = 'pointer';
+        const weeklyBox = document.createElement('input');
+        weeklyBox.type = 'checkbox';
+        weeklyBox.checked = state.hideZeroWeekly;
+        weeklyLabel.append(weeklyBox, document.createTextNode(' Hide 0 Weekly Gains'));
+
+        const totalLabel = document.createElement('label');
+        totalLabel.style.marginLeft = '15px';
+        totalLabel.style.fontSize = '12px';
+        totalLabel.style.cursor = 'pointer';
+        const totalBox = document.createElement('input');
+        totalBox.type = 'checkbox';
+        totalBox.checked = state.hideZeroTotal;
+        totalLabel.append(totalBox, document.createTextNode(' Hide 0 Total Gains'));
+
+        select.addEventListener('change', () => onChange({
+            ...state,
+            filterClass: select.value,
+            page: 1
+        }));
+        weeklyBox.addEventListener('change', () => onChange({
+            ...state,
+            hideZeroWeekly: weeklyBox.checked,
+            page: 1
+        }));
+        totalBox.addEventListener('change', () => onChange({
+            ...state,
+            hideZeroTotal: totalBox.checked,
+            page: 1
+        }));
+
+        container.append(filterLabel, select, weeklyLabel, totalLabel);
+    }
+
+    function renderCartSkillTable(table, pagination, manifest, state, onChange) {
+        const data = sortCartData(buildCartData(manifest), state);
+        const pageCount = Math.max(1, Math.ceil(data.length / CART_ITEMS_PER_PAGE));
+        const page = Math.min(Math.max(1, state.page), pageCount);
+        const start = (page - 1) * CART_ITEMS_PER_PAGE;
+        const pageRows = data.slice(start, start + CART_ITEMS_PER_PAGE);
+
+        pagination.replaceChildren();
+
+        const prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'btn';
+        prev.textContent = '<< Previous';
+        prev.disabled = page <= 1;
+
+        const pageText = document.createElement('span');
+        pageText.style.margin = '0 10px';
+        pageText.style.fontWeight = 'bold';
+        pageText.textContent = ` Page ${page} of ${pageCount} `;
+
+        const next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'btn';
+        next.textContent = 'Next >>';
+        next.disabled = page >= pageCount;
+
+        prev.addEventListener('click', () => onChange({ ...state, page: page - 1 }));
+        next.addEventListener('click', () => onChange({ ...state, page: page + 1 }));
+        pagination.append(prev, pageText, next);
+
+        const arrow = key => {
+            if (state.sortBy !== key) return '<span style="color:#aaa;">▬</span>';
+            return state.sortDir === 'asc' ? '▲' : '▼';
+        };
+
+        table.innerHTML = `
+            <tbody>
+                <tr>
+                    <td bgcolor="#dddddd" colspan="7" align="center"><strong>Skill Gains</strong></td>
+                </tr>
+                <tr>
+                    <td bgcolor="#eeeeee" align="center" width="20"><strong>#</strong></td>
+                    <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
+                    <td bgcolor="#eeeeee" align="center"><strong>Class</strong></td>
+                    <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="CurrentSkill" title="Click to sort by Current Skill"><strong>Current Skill ${arrow('CurrentSkill')}</strong></td>
+                    <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="WeeklyGains" title="Click to sort by Weekly Gains"><strong>Weekly Gains ${arrow('WeeklyGains')}</strong></td>
+                    <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="TotalGains" title="Click to sort by Total Gains"><strong>Total Gains ${arrow('TotalGains')}</strong></td>
+                    <td bgcolor="#eeeeee" align="center"><strong>Time Passed</strong></td>
+                </tr>
+            </tbody>
+        `;
+
+        const tbody = table.tBodies[0];
+
+        pageRows.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            const rank = start + index + 1;
+            const weekly = formatCartGain(row.wgained);
+            const total = formatCartGain(row.gained);
+
+            tr.innerHTML = `
+                <td bgcolor="#f0f0f0" align="center">${rank}</td>
+                <td bgcolor="#f0f0f0"><a href="game.php?cmd=player&ID=${encodeURIComponent(row.id)}"></a></td>
+                <td bgcolor="#f0f0f0" align="center">${row.cls}</td>
+                <td bgcolor="#f0f0f0" align="center">${row.skill.toFixed(3)}</td>
+                <td bgcolor="#f0f0f0" align="center" style="${row.wgained > 0 ? 'color:green;font-weight:bold;' : ''}">${weekly}</td>
+                <td bgcolor="#f0f0f0" align="center" style="${row.gained > 0 ? 'color:green;font-weight:bold;' : ''}">${total}</td>
+                <td bgcolor="#f0f0f0" align="center">${formatElapsed(row.firstSeenAt, row.lastSeenAt)}</td>
+            `;
+            tr.querySelector('a').textContent = row.name;
+            tbody.appendChild(tr);
+        });
+
+        for (const header of table.querySelectorAll('[data-cart-table-sort]')) {
+            header.addEventListener('click', () => {
+                const sortBy = header.dataset.cartTableSort;
+                const sortDir = state.sortBy === sortBy
+                    ? (state.sortDir === 'desc' ? 'asc' : 'desc')
+                    : 'desc';
+                onChange({ ...state, sortBy, sortDir, page: 1 });
+            });
+        }
+    }
+
+    function renderCartClassAdvances(container) {
+        container.replaceChildren();
+
+        const now = Date.now();
+        const realRows = pruneCartClassAdvances(loadCartClassAdvances(), now);
+        saveCartClassAdvances(realRows);
+
+        const rows = [...realRows].sort((a, b) =>
+            (Number(b.toClass) - Number(a.toClass)) ||
+            (Number(b.detectedAt) - Number(a.detectedAt))
+        );
+
+        const table = document.createElement('table');
+        table.align = 'center';
+        table.width = '80%';
+        table.cellSpacing = '2';
+        table.cellPadding = '4';
+        table.style.margin = '8px auto 14px';
+
+        table.innerHTML = `
+            <tbody>
+                <tr>
+                    <td bgcolor="#dddddd" colspan="3" align="center"><strong>Which Racers Advanced</strong></td>
+                </tr>
+                <tr>
+                    <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
+                    <td bgcolor="#eeeeee" align="center"><strong>Class Advance</strong></td>
+                    <td bgcolor="#eeeeee" align="center"><strong>Detected Update</strong></td>
+                </tr>
+            </tbody>
+        `;
+
+        const tbody = table.tBodies[0];
+        for (const row of rows) {
+            const tr = document.createElement('tr');
+
+            const hoboCell = document.createElement('td');
+            hoboCell.bgColor = '#f0f0f0';
+            if (row.playerId) {
+                const link = document.createElement('a');
+                link.href = `game.php?cmd=player&ID=${encodeURIComponent(row.playerId)}`;
+                link.textContent = row.name;
+                hoboCell.appendChild(link);
+            } else {
+                hoboCell.textContent = row.name;
+            }
+
+            const advanceCell = document.createElement('td');
+            advanceCell.bgColor = '#f0f0f0';
+            advanceCell.align = 'center';
+            advanceCell.textContent = `${row.fromClass} → ${row.toClass}`;
+
+            const detectedCell = document.createElement('td');
+            detectedCell.bgColor = '#f0f0f0';
+            detectedCell.align = 'center';
+            detectedCell.textContent = row.detectedLabel || formatCartAdvanceTimestamp(row.detectedAt);
+
+            tr.append(hoboCell, advanceCell, detectedCell);
+            tbody.appendChild(tr);
+        }
+
+        if (!rows.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 3;
+            td.bgColor = '#f0f0f0';
+            td.align = 'center';
+            td.textContent = 'No class advances detected within the past 7 days.';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+
+        container.appendChild(table);
+    }
+
+    function formatCartAdvanceTimestamp(timestamp) {
+        return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Australia/Brisbane',
+            day: '2-digit',
+            month: 'short',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).format(new Date(timestamp)).replace(',', '').toUpperCase();
+    }
+
+    function buildCartData(manifest) {
+        return Object.entries(manifest).map(([id, d]) => {
+            const skill = Number(d.lastSkill);
+            const firstSkill = Number(d.firstSkill);
+            const weekStartSkill = Number(d.weekStartSkill);
+
+            return {
+                id,
+                name: String(d.name || `Hobo ${id}`),
+                cls: String(d.rallyLevel || ''),
+                skill: Number.isFinite(skill) ? skill : 0,
+                gained: Number.isFinite(skill) && Number.isFinite(firstSkill)
+                    ? skill - firstSkill
+                    : 0,
+                wgained: Number.isFinite(skill) && Number.isFinite(weekStartSkill)
+                    ? skill - weekStartSkill
+                    : 0,
+                firstSeenAt: Number(d.firstSeenAt) || 0,
+                lastSeenAt: Number(d.lastSeenAt) || 0
+            };
+        });
+    }
+
+    function sortCartData(data, state) {
+        return data
+            .filter(row => {
+                if (state.filterClass !== 'All' && row.cls !== state.filterClass) return false;
+                if (state.hideZeroWeekly && row.wgained <= 0) return false;
+                if (state.hideZeroTotal && row.gained <= 0) return false;
+                return true;
+            })
+            .sort((a, b) => {
+                let diff;
+                if (state.sortBy === 'WeeklyGains') diff = b.wgained - a.wgained;
+                else if (state.sortBy === 'CurrentSkill') diff = b.skill - a.skill;
+                else diff = b.gained - a.gained;
+
+                if (diff === 0) diff = b.skill - a.skill;
+                return state.sortDir === 'asc' ? -diff : diff;
+            });
+    }
+
+    function formatCartGain(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '0.000';
+        const sign = n > 0 ? '+' : '';
+        return `${sign}${n.toFixed(3)}`;
+    }
+
+    function formatElapsed(firstSeenAt, lastSeenAt) {
+        if (!firstSeenAt || !lastSeenAt || lastSeenAt < firstSeenAt) return '0h';
+        const totalHours = Math.floor((lastSeenAt - firstSeenAt) / 3600000);
+        const days = Math.floor(totalHours / 24);
+        const hours = totalHours % 24;
+        return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+    }
+
+    function loadCartUiState() {
+        return {
+            filterClass: sessionStorage.getItem('hwus_cart_filter') || 'All',
+            sortBy: sessionStorage.getItem('hwus_cart_sort') || 'TotalGains',
+            sortDir: sessionStorage.getItem('hwus_cart_sort_dir') || 'desc',
+            page: Number.parseInt(sessionStorage.getItem('hwus_cart_page') || '1', 10) || 1,
+            hideZeroWeekly: sessionStorage.getItem('hwus_cart_hide_zw') === 'true',
+            hideZeroTotal: sessionStorage.getItem('hwus_cart_hide_zt') === 'true',
+            skillGainsOpen: sessionStorage.getItem('hwus_cart_skill_open') === 'true',
+            advancesOpen: sessionStorage.getItem('hwus_cart_advances_open') === 'true'
+        };
+    }
+
+    function saveCartUiState(state) {
+        sessionStorage.setItem('hwus_cart_filter', state.filterClass);
+        sessionStorage.setItem('hwus_cart_sort', state.sortBy);
+        sessionStorage.setItem('hwus_cart_sort_dir', state.sortDir);
+        sessionStorage.setItem('hwus_cart_page', String(state.page));
+        sessionStorage.setItem('hwus_cart_hide_zw', String(state.hideZeroWeekly));
+        sessionStorage.setItem('hwus_cart_hide_zt', String(state.hideZeroTotal));
+        sessionStorage.setItem('hwus_cart_skill_open', String(state.skillGainsOpen));
+        sessionStorage.setItem('hwus_cart_advances_open', String(state.advancesOpen));
+    }
+
+    function injectCartTrackerStyles() {
+        if (document.getElementById('hwus-cart-tracker-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'hwus-cart-tracker-styles';
+        style.textContent = `
+            #hwus-cart-global-tracker {
+                margin: 14px 0 12px;
+                text-align: center;
+            }
+            .hwus-cart-hof-nav {
+                width: 80%;
+                margin: 8px auto 0;
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                align-items: center;
+            }
+            .hwus-cart-hof-nav > div:first-child { text-align: left; }
+            .hwus-cart-hof-nav > div:nth-child(2) { text-align: center; }
+            .hwus-cart-hof-nav > div:last-child { text-align: right; }
+            .hwus-cart-header-grid {
+                width: 80%;
+                margin: 8px auto 4px;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: center;
+                row-gap: 5px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            .hwus-cart-global-time,
+            .hwus-cart-tracker-title {
+                text-align: center;
+            }
+            .hwus-cart-update-action {
+                text-align: center;
+            }
+            .hwus-cart-header-grid .btn {
+                font: inherit;
+            }
+            .hwus-cart-failures {
+                width: 80%;
+                margin: 4px auto 7px;
+                color: #800;
+                font-size: 11px;
+                line-height: 1.35;
+                font-weight: normal;
+                text-align: center;
+            }
+            .hwus-cart-summary-wrap {
+                margin: 6px 0 8px;
+                font-size: 12px;
+                text-align: center;
+            }
+            .hwus-cart-controls,
+            .hwus-cart-pagination {
+                margin-bottom: 8px;
+                text-align: center;
+            }
+            .hwus-cart-section-toggle {
+                margin: 0 auto 8px;
+            }
+            .hwus-cart-advances-toggle {
+                margin-left: 20px;
+            }
+            .hwus-cart-advances-wrap {
+                text-align: center;
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     function loadPikieEntries() {
@@ -8015,14 +9092,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.6',
+    version: '4.9',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '65ffb10f3d58c60fa7fca101b8a15a1ed063d7223378d77aad2c7042374ccf7e';
+const HWUS_RELEASE_SHA256 = 'c9817c7f385a6215a22f548381e1589e4ec5a63c7ad8f2c768a7a1eed965138d';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -8082,13 +9159,13 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an official HW Utility Suite v4.6 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.9 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
     instruction.style.cssText = 'margin:0 0 16px;line-height:1.45';
     instruction.textContent =
-        'Reinstall the current official build from the project repository to continue using HW Utility Suite.';
+        'Reinstall the current official build to continue using HW Utility Suite.';
 
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;justify-content:center;gap:10px;flex-wrap:wrap';
