@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.9
+// @version      4.10
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2336,6 +2336,10 @@ HWUS_getCurrentPlayerId();
         const totalPages = getTotalHofPages(content);
         const observedAt = Date.now();
 
+        // Reconcile any newly-seen Class 1 racer from the most recent completed
+        // sweep before the current page refreshes that racer's last-seen time.
+        reconcileRecentCartNorthernFenceEntries();
+
         // A manually-viewed HOF page is also a valid authoritative observation.
         const currentRows = parseHofTable(nativeTable, currentPageNumber);
         if (currentRows.length) {
@@ -2784,6 +2788,7 @@ HWUS_getCurrentPlayerId();
 
         const advances = pruneCartClassAdvances(loadCartClassAdvances(), detectedAt);
         advances.push({
+            type: 'class-advance',
             playerId: row.id,
             name: row.name,
             fromClass,
@@ -2794,14 +2799,72 @@ HWUS_getCurrentPlayerId();
         saveCartClassAdvances(advances);
     }
 
+    function recordCartNorthernFenceEntry(row, detectedAt, detectedLabel = '') {
+        const toClass = Number(row?.rallyLevel);
+        if (toClass !== 1) return;
+
+        const advances = pruneCartClassAdvances(loadCartClassAdvances(), detectedAt);
+        if (advances.some(entry =>
+            entry?.type === 'nf-entry' && String(entry.playerId || '') === String(row.id || '')
+        )) return;
+
+        advances.push({
+            type: 'nf-entry',
+            playerId: row.id,
+            name: row.name,
+            fromLabel: 'Suicide Hill',
+            toClass: 1,
+            detectedAt,
+            detectedLabel: detectedLabel || getGameDateTimeLabel()
+        });
+        saveCartClassAdvances(advances);
+    }
+
+    function reconcileRecentCartNorthernFenceEntries() {
+        const meta = loadCartMeta();
+        if (!(Number(meta.lastGlobalUpdateAt) > 0)) return;
+
+        const now = Date.now();
+        const cutoff = now - CART_ADVANCE_WINDOW_MS;
+        const manifest = loadCartManifest();
+
+        for (const [playerId, entry] of Object.entries(manifest)) {
+            const firstSeenAt = Number(entry?.firstSeenAt) || 0;
+            const lastSeenAt = Number(entry?.lastSeenAt) || 0;
+
+            if (
+                Number(entry?.rallyLevel) !== 1 ||
+                firstSeenAt < cutoff ||
+                firstSeenAt !== lastSeenAt
+            ) {
+                continue;
+            }
+
+            recordCartNorthernFenceEntry(
+                {
+                    id: playerId,
+                    name: String(entry?.name || `Hobo ${playerId}`),
+                    rallyLevel: '1'
+                },
+                firstSeenAt,
+                formatCartAdvanceTimestamp(firstSeenAt)
+            );
+        }
+    }
+
     function persistCartPage(pageNumber, rows, observedAt) {
         const manifest = loadCartManifest();
         const currentWeekStart = getCurrentWeekStart();
+        const hasEstablishedBaseline = Number(loadCartMeta().lastGlobalUpdateAt) > 0;
 
         for (const row of rows) {
             const prior = manifest[row.id];
 
             if (!prior) {
+                if (hasEstablishedBaseline) {
+                    recordCartNorthernFenceEntry(row, observedAt);
+                }
+
                 manifest[row.id] = {
                     name: row.name,
                     rallyLevel: row.rallyLevel,
@@ -2974,7 +3037,7 @@ HWUS_getCurrentPlayerId();
         table.cellPadding = '4';
 
         let totalActive = 0;
-        let globalTotal = 0;
+        const globalTotal = data.length;
         const classHeaders = [];
         const activeCells = [];
         const totalCells = [];
@@ -2983,7 +3046,6 @@ HWUS_getCurrentPlayerId();
             const active = activeCounts[String(level)] || 0;
             const total = totalCounts[String(level)] || 0;
             totalActive += active;
-            globalTotal += total;
             classHeaders.push(`<td bgcolor="#eeeeee" align="center"><strong>${level}</strong></td>`);
             activeCells.push(`<td bgcolor="#f0f0f0" align="center">${active}</td>`);
             totalCells.push(`<td bgcolor="#f0f0f0" align="center">${total}</td>`);
@@ -3203,7 +3265,9 @@ HWUS_getCurrentPlayerId();
             const advanceCell = document.createElement('td');
             advanceCell.bgColor = '#f0f0f0';
             advanceCell.align = 'center';
-            advanceCell.textContent = `${row.fromClass} → ${row.toClass}`;
+            advanceCell.textContent = row.type === 'nf-entry'
+                ? `${row.fromLabel || 'Suicide Hill'} → Class ${row.toClass}`
+                : `${row.fromClass} → ${row.toClass}`;
 
             const detectedCell = document.createElement('td');
             detectedCell.bgColor = '#f0f0f0';
@@ -9092,14 +9156,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.9',
+    version: '4.10',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'c9817c7f385a6215a22f548381e1589e4ec5a63c7ad8f2c768a7a1eed965138d';
+const HWUS_RELEASE_SHA256 = '8511c2dc4e5ba7fd5f14765b698fd5be6c7dbb3136c5e0e5a7befcaadc6852ee';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -9159,7 +9223,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.9 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.10 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
