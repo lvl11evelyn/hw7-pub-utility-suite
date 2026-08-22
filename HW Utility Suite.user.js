@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.11
+// @version      4.14
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -8107,7 +8107,9 @@ HWUS_getCurrentPlayerId();
     const params = new URLSearchParams(location.search);
     const cmd = params.get('cmd');
 
-    const isOutgoingFight = cmd === 'fight' && /^\d+$/.test(params.get('ID') || '');
+    const profileID = params.get('ID');
+    const isProfile = cmd === 'player' && /^\d+$/.test(profileID || '');
+    const isOutgoingFight = cmd === 'fight' && /^\d+$/.test(profileID || '');
     const battleLogID = params.get('id');
     const isBattleLog = cmd === 'battlel' && /^\d+$/.test(battleLogID || '');
 
@@ -8132,7 +8134,7 @@ HWUS_getCurrentPlayerId();
         !isBattleLog &&
         !!battleLogOverviewTable;
 
-    if (!isOutgoingFight && !isBattleLog && !isBattleLogOverview) return;
+    if (!isProfile && !isOutgoingFight && !isBattleLog && !isBattleLogOverview) return;
 
     const MY_ID = HWUS_getCurrentPlayerId();
     if (!MY_ID) return;
@@ -8181,6 +8183,7 @@ HWUS_getCurrentPlayerId();
                 wins: 0,
                 losses: 0,
                 stalemates: 0,
+                lastAddedAt: 0,
                 seen: {}
             };
         }
@@ -8203,6 +8206,8 @@ HWUS_getCurrentPlayerId();
         else if (result === 'stalemate') {
             record.stalemates = Math.max(0, record.stalemates + amount);
         }
+
+        if (amount > 0) record.lastAddedAt = Date.now();
     }
 
     function makeSeenEntry(result, source, extra = {}) {
@@ -8280,6 +8285,112 @@ HWUS_getCurrentPlayerId();
             Number(match[2]),
             parseClockParts(match[3])
         );
+    }
+
+    function inferAbsoluteFightTime(month, day, clock) {
+        if (!month || !day || !clock) return 0;
+
+        const now = new Date();
+        let value = new Date(
+            now.getFullYear(),
+            month - 1,
+            day,
+            clock.hour,
+            clock.minute,
+            clock.second,
+            0
+        ).getTime();
+
+        if (!Number.isFinite(value)) return 0;
+
+        // Around New Year, a December battle-log row viewed in January belongs
+        // to the previous year rather than eleven months in the future.
+        if (value > Date.now() + (2 * 24 * 60 * 60 * 1000)) {
+            value = new Date(
+                now.getFullYear() - 1,
+                month - 1,
+                day,
+                clock.hour,
+                clock.minute,
+                clock.second,
+                0
+            ).getTime();
+        }
+
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    function parseBattleLogTimestamp(text) {
+        const raw = String(text || '').trim();
+        const match = raw.match(
+            /^(\d{1,2})\/(\d{1,2})\s+(\d{1,2}:\d{2}\.\d{2}\s*(?:am|pm))$/i
+        );
+        if (!match) return null;
+
+        const clock = parseClockParts(match[3]);
+        const timestamp = inferAbsoluteFightTime(
+            Number(match[1]),
+            Number(match[2]),
+            clock
+        );
+        if (!timestamp) return null;
+
+        return {
+            source: 'battle-log',
+            timestamp,
+            text: raw,
+            result: null
+        };
+    }
+
+    function parseOutgoingFightTimestamp() {
+        if (!isOutgoingFight) return null;
+
+        const dateText = (document.querySelector('.clock i')?.textContent || '').trim();
+        const dateMatch = dateText.match(/^([A-Za-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?$/i);
+        const clockText = (document.querySelector('#clock')?.textContent || '').trim();
+        const clock = parseClockParts(clockText);
+        if (!dateMatch || !clock) return null;
+
+        const month = monthNumber(dateMatch[1]);
+        const day = Number(dateMatch[2]);
+        const timestamp = inferAbsoluteFightTime(month, day, clock);
+        if (!timestamp) return null;
+
+        return {
+            source: 'game-clock',
+            timestamp,
+            text: `${dateMatch[1]} ${day}, ${clockText}`,
+            result: null
+        };
+    }
+
+    function setLatestFight(record, candidate) {
+        if (!record || !candidate || !Number.isFinite(Number(candidate.timestamp))) return;
+        if (!['win', 'loss', 'stalemate'].includes(candidate.result)) return;
+
+        const current = record.latestFight && typeof record.latestFight === 'object'
+            ? record.latestFight
+            : null;
+        const currentTime = Number(current?.timestamp) || 0;
+        const candidateTime = Number(candidate.timestamp) || 0;
+
+        const shouldReplace =
+            candidateTime > currentTime ||
+            (
+                candidateTime === currentTime &&
+                candidate.source === 'battle-log' &&
+                current?.source !== 'battle-log'
+            );
+
+        if (!shouldReplace) return;
+
+        record.latestFight = {
+            source: candidate.source,
+            timestamp: candidateTime,
+            text: String(candidate.text || ''),
+            result: candidate.result
+        };
     }
 
     function momentDifferenceSeconds(a, b) {
@@ -8631,6 +8742,16 @@ HWUS_getCurrentPlayerId();
             record.seen[key] = makeSeenEntry(result, source, fightMetadata);
         }
 
+        if (isOutgoingFight) {
+            const latestFight = parseOutgoingFightTimestamp();
+            if (latestFight) {
+                setLatestFight(record, {
+                    ...latestFight,
+                    result
+                });
+            }
+        }
+
         saveState(state);
 
         return { recorded: true, fightKey: fightKeys[0] };
@@ -8720,6 +8841,17 @@ HWUS_getCurrentPlayerId();
             const battleLogKey = `battlel:${battleIDMatch[1]}`;
             const record = ensureOpponent(state, opponent.id, opponent.name);
 
+            // The Battle Log is the authoritative source for the latest-fight
+            // display. This is intentionally opponent-level metadata and does
+            // not depend on battle IDs, compact keys, or reconciliation.
+            const battleTimestamp = parseBattleLogTimestamp(timeCell.textContent || '');
+            if (battleTimestamp) {
+                setLatestFight(record, {
+                    ...battleTimestamp,
+                    result
+                });
+            }
+
             if (hasSeen(record, battleLogKey)) {
                 alreadyKnown += 1;
                 continue;
@@ -8795,6 +8927,90 @@ HWUS_getCurrentPlayerId();
 
         table.parentNode.insertBefore(button, table);
         table.parentNode.insertBefore(status, table);
+    }
+
+    function formatLatestFight(record) {
+        const latest = record?.latestFight;
+        if (!latest || typeof latest !== 'object') return '—';
+
+        const resultLabel =
+            latest.result === 'win' ? 'Win' :
+            latest.result === 'loss' ? 'Loss' :
+            latest.result === 'stalemate' ? 'Stalemate' : '';
+
+        const text = String(latest.text || '').trim();
+        if (!text) return resultLabel || '—';
+
+        return resultLabel ? `${text} — ${resultLabel}` : text;
+    }
+
+    function findProfileJournalTable() {
+        const profileLabel = [...document.querySelectorAll('td b u')].find(node =>
+            (node.textContent || '').trim().toLowerCase() === 'profile:'
+        );
+
+        const profileCell = profileLabel?.closest('td');
+        if (!profileCell) return null;
+
+        return [...profileCell.querySelectorAll(':scope > table')].find(table => {
+            const firstRowText = (table.rows?.[0]?.textContent || '').trim();
+            return /\bPersonal Journal\b/i.test(firstRowText);
+        }) || null;
+    }
+
+    function renderProfileFightRecord() {
+        if (!isProfile || profileID === MY_ID) return false;
+
+        const state = loadState();
+        const record = state.opponents?.[profileID];
+        if (!record || typeof record !== 'object') return false;
+
+        const wins = Math.max(0, Number(record.wins) || 0);
+        const losses = Math.max(0, Number(record.losses) || 0);
+        const stalemates = Math.max(0, Number(record.stalemates) || 0);
+        const totalRecorded = wins + losses + stalemates;
+        if (totalRecorded <= 0) return false;
+
+        const journalTable = findProfileJournalTable();
+        if (!journalTable || document.getElementById('hw-fight-record-profile')) return false;
+
+        const decisions = wins + losses;
+        const winRate = decisions
+            ? `${((wins / decisions) * 100).toFixed(2)}%`
+            : '—';
+
+        const box = document.createElement('div');
+        box.id = 'hw-fight-record-profile';
+        box.style.cssText = [
+            'width:98%',
+            'margin:8px auto 0',
+            'box-sizing:border-box',
+            'border:1px solid #aaa',
+            'background:#f3f3f3',
+            'color:#000',
+            'font:12px Arial,sans-serif',
+            'line-height:1.45'
+        ].join(';');
+
+        const heading = document.createElement('div');
+        heading.style.cssText = [
+            'padding:3px 5px',
+            'background:#ccc',
+            'font-weight:bold'
+        ].join(';');
+        heading.textContent = 'Fight Record';
+
+        const tally = document.createElement('div');
+        tally.style.cssText = 'padding:5px 6px 2px';
+        tally.textContent = `W ${wins}   L ${losses}   S ${stalemates}   Win ${winRate}`;
+
+        const lastEntry = document.createElement('div');
+        lastEntry.style.cssText = 'padding:0 6px 5px;color:#555;font-size:11px';
+        lastEntry.textContent = `Last entry: ${formatLatestFight(record)}`;
+
+        box.append(heading, tally, lastEntry);
+        journalTable.insertAdjacentElement('afterend', box);
+        return true;
     }
 
     function makePanel(state, opponent, result, reconciliation = null) {
@@ -8885,6 +9101,11 @@ HWUS_getCurrentPlayerId();
         }
 
         return { panel, refreshTally };
+    }
+
+    if (isProfile) {
+        renderProfileFightRecord();
+        return;
     }
 
     if (isBattleLogOverview) {
@@ -9062,3 +9283,6 @@ function HWUS_renderIntegrityFailure() {
 })();
 //CHANGELOG
 //v4.11: Removed the automated Super-Cart HoF Update All fetch sweep; HoF tracking now updates only from pages the user manually views.
+//v4.12: Added existing Fight Record Tracker W/L/S/Win summaries beneath Personal Journal on profiles with recorded rivalry history.
+//v4.13: Added the most recently recorded fight-entry date/time to profile Fight Record boxes.
+//v4.14: Fight Record profile latest-entry metadata now uses the newest Battle Log row for that opponent when available, otherwise the native HoboWars fight-page date/clock, and displays the corresponding W/L/S outcome.
