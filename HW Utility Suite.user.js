@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.10
+// @version      4.11
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -1965,7 +1965,6 @@ HWUS_getCurrentPlayerId();
     const K_CART_ADVANCES = 'hwus_cart_class_advances_v1';
     const CART_ITEMS_PER_PAGE = 50;
     const CART_ACTIVE_WEEKLY_GAIN = 1;
-    const CART_GLOBAL_UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
     const CART_ADVANCE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
     const PIKIE_PANEL_W = 160;
@@ -2336,15 +2335,14 @@ HWUS_getCurrentPlayerId();
         const totalPages = getTotalHofPages(content);
         const observedAt = Date.now();
 
-        // Reconcile any newly-seen Class 1 racer from the most recent completed
-        // sweep before the current page refreshes that racer's last-seen time.
+        // Reconcile any newly-seen Class 1 racer against the previously
+        // established tracker baseline before refreshing this page's last-seen time.
         reconcileRecentCartNorthernFenceEntries();
 
         // A manually-viewed HOF page is also a valid authoritative observation.
         const currentRows = parseHofTable(nativeTable, currentPageNumber);
         if (currentRows.length) {
             persistCartPage(currentPageNumber, currentRows, observedAt);
-            resolveFailedPage(currentPageNumber);
         }
 
         injectCartTrackerStyles();
@@ -2356,29 +2354,11 @@ HWUS_getCurrentPlayerId();
         const headerGrid = document.createElement('div');
         headerGrid.className = 'hwus-cart-header-grid';
 
-        const timestampLine = document.createElement('div');
-        timestampLine.className = 'hwus-cart-global-time';
-
-        const actionLine = document.createElement('div');
-        actionLine.className = 'hwus-cart-update-action';
-        actionLine.appendChild(document.createTextNode('Update now? '));
-
-        const updateButton = document.createElement('button');
-        updateButton.type = 'button';
-        updateButton.className = 'btn';
-        updateButton.textContent = 'Update All';
-        actionLine.appendChild(updateButton);
-
         const title = document.createElement('div');
         title.className = 'hwus-cart-tracker-title';
         title.innerHTML = '<strong>Super-Cart Racing Skill Tracker</strong>';
 
-        const headerSpacer = document.createElement('div');
-
-        headerGrid.append(timestampLine, actionLine, title, headerSpacer);
-
-        const failureBox = document.createElement('div');
-        failureBox.className = 'hwus-cart-failures';
+        headerGrid.appendChild(title);
 
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'hwus-cart-summary-wrap';
@@ -2409,7 +2389,6 @@ HWUS_getCurrentPlayerId();
 
         tracker.append(
             headerGrid,
-            failureBox,
             summaryDiv,
             controlsDiv,
             skillToggle,
@@ -2430,31 +2409,9 @@ HWUS_getCurrentPlayerId();
         }
 
         let state = loadCartUiState();
-        let updateCooldownTimer = null;
-
-        const refreshUpdateState = () => {
-            if (updateCooldownTimer !== null) {
-                window.clearTimeout(updateCooldownTimer);
-                updateCooldownTimer = null;
-            }
-
-            const meta = loadCartMeta();
-            const remainingMs = renderGlobalUpdateState(
-                timestampLine,
-                updateButton,
-                failureBox,
-                meta
-            );
-
-            if (remainingMs > 0 && !meta.failedPages.length) {
-                const delay = remainingMs >= 60 * 60 * 1000 ? 60 * 1000 : 1000;
-                updateCooldownTimer = window.setTimeout(refreshUpdateState, delay);
-            }
-        };
 
         const renderAll = () => {
             const manifest = loadCartManifest();
-            refreshUpdateState();
             renderCartSummary(summaryDiv, manifest);
             controlsDiv.style.display = state.skillGainsOpen ? 'block' : 'none';
             if (state.skillGainsOpen) {
@@ -2504,79 +2461,6 @@ HWUS_getCurrentPlayerId();
 
         renderAll();
 
-        updateButton.addEventListener('click', async event => {
-            event.preventDefault();
-            if (updateButton.disabled) return;
-
-            updateButton.disabled = true;
-            updateButton.style.opacity = '0.55';
-            updateButton.style.cursor = 'default';
-            updateButton.style.pointerEvents = 'none';
-
-            let dots = 1;
-            updateButton.textContent = 'fetching.';
-            const loadingTimer = window.setInterval(() => {
-                dots = dots >= 3 ? 1 : dots + 1;
-                updateButton.textContent = `fetching${'.'.repeat(dots)}`;
-            }, 400);
-
-            const sweepStartedAt = Date.now();
-            const failedPages = [];
-            const sr = new URL(location.href).searchParams.get('sr') || '';
-
-            for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
-                try {
-                    let rows;
-
-                    if (pageNumber === currentPageNumber) {
-                        rows = parseHofTable(nativeTable, pageNumber);
-                    } else {
-                        const pageUrl = buildHofPageUrl(sr, pageNumber);
-                        const response = await fetch(pageUrl);
-                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-                        const buffer = await response.arrayBuffer();
-                        const decoder = new TextDecoder('iso-8859-1');
-                        const fetchedHtml = decoder.decode(buffer);
-                        const doc = new DOMParser().parseFromString(fetchedHtml, 'text/html');
-                        const table = findHofTable(doc);
-                        if (!table) throw new Error('HOF table not found.');
-                        rows = parseHofTable(table, pageNumber);
-                    }
-
-                    if (!rows.length) throw new Error('No HOF rows parsed.');
-                    persistCartPage(pageNumber, rows, Date.now());
-                } catch {
-                    failedPages.push(pageNumber);
-                }
-            }
-
-            window.clearInterval(loadingTimer);
-
-            const meta = loadCartMeta();
-            meta.lastSweepAttempt = sweepStartedAt;
-            meta.totalPages = totalPages;
-            meta.failedPages = failedPages;
-
-            if (failedPages.length === 0) {
-                meta.lastGlobalUpdate = getGameDateTimeLabel();
-                meta.lastGlobalUpdateAt = Date.now();
-            }
-
-            saveCartMeta(meta);
-
-            updateButton.textContent = 'Complete';
-            updateButton.disabled = true;
-            updateButton.style.opacity = '0.55';
-            updateButton.style.cursor = 'default';
-            updateButton.style.pointerEvents = 'none';
-
-            if (failedPages.length) {
-                renderAll();
-            } else {
-                window.setTimeout(renderAll, 1200);
-            }
-        });
     }
 
     function findHofTable(root) {
@@ -2909,20 +2793,6 @@ HWUS_getCurrentPlayerId();
         saveCartClassAdvances(pruneCartClassAdvances(loadCartClassAdvances(), observedAt));
     }
 
-    function resolveFailedPage(pageNumber) {
-        const meta = loadCartMeta();
-        if (!meta.failedPages.includes(pageNumber)) return;
-
-        meta.failedPages = meta.failedPages.filter(page => page !== pageNumber);
-
-        if (meta.failedPages.length === 0) {
-            meta.lastGlobalUpdate = getGameDateTimeLabel();
-            meta.lastGlobalUpdateAt = Date.now();
-        }
-
-        saveCartMeta(meta);
-    }
-
     function getGameDateTimeLabel() {
         const dateText = normalizeSpace(document.querySelector('.clock i')?.textContent || '');
         const clockText = normalizeSpace(document.querySelector('#clock')?.textContent || '');
@@ -2941,79 +2811,6 @@ HWUS_getCurrentPlayerId();
             minute: '2-digit',
             hour12: true
         }).format(new Date()).replace(',', '').toUpperCase();
-    }
-
-    function formatGlobalUpdateCooldown(ms) {
-        const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = totalSeconds % 60;
-
-        if (totalSeconds >= 3600) {
-            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-        }
-
-        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
-
-    function renderGlobalUpdateState(timestampLine, button, failureBox, meta) {
-        timestampLine.textContent = `Last Global Racing Skill Update: ${meta.lastGlobalUpdate || 'Never'}`;
-        failureBox.replaceChildren();
-
-        button.style.opacity = '';
-        button.style.cursor = 'pointer';
-        button.style.pointerEvents = '';
-
-        if (meta.failedPages.length) {
-            button.disabled = true;
-            button.textContent = 'Complete';
-            button.style.opacity = '0.55';
-            button.style.cursor = 'default';
-            button.style.pointerEvents = 'none';
-
-            const cooldownNote = document.createElement('div');
-            cooldownNote.textContent = 'Cooldown begins after failed pages are manually viewed.';
-
-            const count = meta.failedPages.length;
-            const first = document.createElement('div');
-            first.textContent = `${count} Page(s) unsuccessfully updated.`;
-
-            const second = document.createElement('div');
-            second.appendChild(document.createTextNode('Failed page(s): '));
-
-            meta.failedPages.forEach((pageNumber, index) => {
-                if (index) second.appendChild(document.createTextNode(', '));
-                const link = document.createElement('a');
-                link.href = buildHofPageUrl(new URL(location.href).searchParams.get('sr') || '', pageNumber);
-                link.textContent = String(pageNumber);
-                second.appendChild(link);
-            });
-            second.appendChild(document.createTextNode('.'));
-
-            const third = document.createElement('div');
-            third.textContent = 'View failed pages to update manually.';
-
-            failureBox.append(cooldownNote, first, second, third);
-            return 0;
-        }
-
-        const lastGlobalUpdateAt = Number(meta.lastGlobalUpdateAt) || 0;
-        const remainingMs = lastGlobalUpdateAt
-            ? Math.max(0, CART_GLOBAL_UPDATE_COOLDOWN_MS - (Date.now() - lastGlobalUpdateAt))
-            : 0;
-
-        if (remainingMs > 0) {
-            button.disabled = true;
-            button.textContent = formatGlobalUpdateCooldown(remainingMs);
-            button.style.opacity = '0.55';
-            button.style.cursor = 'default';
-            button.style.pointerEvents = 'none';
-            return remainingMs;
-        }
-
-        button.disabled = false;
-        button.textContent = 'Update All';
-        return 0;
     }
 
     function renderCartSummary(container, manifest) {
@@ -3407,30 +3204,10 @@ HWUS_getCurrentPlayerId();
             .hwus-cart-header-grid {
                 width: 80%;
                 margin: 8px auto 4px;
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                align-items: center;
-                row-gap: 5px;
                 font-weight: bold;
                 font-size: 13px;
             }
-            .hwus-cart-global-time,
             .hwus-cart-tracker-title {
-                text-align: center;
-            }
-            .hwus-cart-update-action {
-                text-align: center;
-            }
-            .hwus-cart-header-grid .btn {
-                font: inherit;
-            }
-            .hwus-cart-failures {
-                width: 80%;
-                margin: 4px auto 7px;
-                color: #800;
-                font-size: 11px;
-                line-height: 1.35;
-                font-weight: normal;
                 text-align: center;
             }
             .hwus-cart-summary-wrap {
@@ -9283,3 +9060,5 @@ function HWUS_renderIntegrityFailure() {
         HWUS_officialBuild();
     }
 })();
+//CHANGELOG
+//v4.11: Removed the automated Super-Cart HoF Update All fetch sweep; HoF tracking now updates only from pages the user manually views.
