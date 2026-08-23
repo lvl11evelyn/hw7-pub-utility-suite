@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.14
+// @version      4.15
 // @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -1965,6 +1965,7 @@ HWUS_getCurrentPlayerId();
     const K_CART_ADVANCES = 'hwus_cart_class_advances_v1';
     const CART_ITEMS_PER_PAGE = 50;
     const CART_ACTIVE_WEEKLY_GAIN = 1;
+    const CART_GLOBAL_UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
     const CART_ADVANCE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
     const PIKIE_PANEL_W = 160;
@@ -2335,14 +2336,15 @@ HWUS_getCurrentPlayerId();
         const totalPages = getTotalHofPages(content);
         const observedAt = Date.now();
 
-        // Reconcile any newly-seen Class 1 racer against the previously
-        // established tracker baseline before refreshing this page's last-seen time.
+        // Reconcile any newly-seen Class 1 racer from the most recent completed
+        // sweep before the current page refreshes that racer's last-seen time.
         reconcileRecentCartNorthernFenceEntries();
 
         // A manually-viewed HOF page is also a valid authoritative observation.
         const currentRows = parseHofTable(nativeTable, currentPageNumber);
         if (currentRows.length) {
             persistCartPage(currentPageNumber, currentRows, observedAt);
+            resolveFailedPage(currentPageNumber);
         }
 
         injectCartTrackerStyles();
@@ -2354,11 +2356,29 @@ HWUS_getCurrentPlayerId();
         const headerGrid = document.createElement('div');
         headerGrid.className = 'hwus-cart-header-grid';
 
+        const timestampLine = document.createElement('div');
+        timestampLine.className = 'hwus-cart-global-time';
+
+        const actionLine = document.createElement('div');
+        actionLine.className = 'hwus-cart-update-action';
+        actionLine.appendChild(document.createTextNode('Update now? '));
+
+        const updateButton = document.createElement('button');
+        updateButton.type = 'button';
+        updateButton.className = 'btn';
+        updateButton.textContent = 'Update All';
+        actionLine.appendChild(updateButton);
+
         const title = document.createElement('div');
         title.className = 'hwus-cart-tracker-title';
         title.innerHTML = '<strong>Super-Cart Racing Skill Tracker</strong>';
 
-        headerGrid.appendChild(title);
+        const headerSpacer = document.createElement('div');
+
+        headerGrid.append(timestampLine, title, headerSpacer);
+
+        const failureBox = document.createElement('div');
+        failureBox.className = 'hwus-cart-failures';
 
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'hwus-cart-summary-wrap';
@@ -2389,6 +2409,7 @@ HWUS_getCurrentPlayerId();
 
         tracker.append(
             headerGrid,
+            failureBox,
             summaryDiv,
             controlsDiv,
             skillToggle,
@@ -2409,9 +2430,31 @@ HWUS_getCurrentPlayerId();
         }
 
         let state = loadCartUiState();
+        let updateCooldownTimer = null;
+
+        const refreshUpdateState = () => {
+            if (updateCooldownTimer !== null) {
+                window.clearTimeout(updateCooldownTimer);
+                updateCooldownTimer = null;
+            }
+
+            const meta = loadCartMeta();
+            const remainingMs = renderGlobalUpdateState(
+                timestampLine,
+                updateButton,
+                failureBox,
+                meta
+            );
+
+            if (remainingMs > 0 && !meta.failedPages.length) {
+                const delay = remainingMs >= 60 * 60 * 1000 ? 60 * 1000 : 1000;
+                updateCooldownTimer = window.setTimeout(refreshUpdateState, delay);
+            }
+        };
 
         const renderAll = () => {
             const manifest = loadCartManifest();
+            refreshUpdateState();
             renderCartSummary(summaryDiv, manifest);
             controlsDiv.style.display = state.skillGainsOpen ? 'block' : 'none';
             if (state.skillGainsOpen) {
@@ -2793,6 +2836,20 @@ HWUS_getCurrentPlayerId();
         saveCartClassAdvances(pruneCartClassAdvances(loadCartClassAdvances(), observedAt));
     }
 
+    function resolveFailedPage(pageNumber) {
+        const meta = loadCartMeta();
+        if (!meta.failedPages.includes(pageNumber)) return;
+
+        meta.failedPages = meta.failedPages.filter(page => page !== pageNumber);
+
+        if (meta.failedPages.length === 0) {
+            meta.lastGlobalUpdate = getGameDateTimeLabel();
+            meta.lastGlobalUpdateAt = Date.now();
+        }
+
+        saveCartMeta(meta);
+    }
+
     function getGameDateTimeLabel() {
         const dateText = normalizeSpace(document.querySelector('.clock i')?.textContent || '');
         const clockText = normalizeSpace(document.querySelector('#clock')?.textContent || '');
@@ -2811,6 +2868,79 @@ HWUS_getCurrentPlayerId();
             minute: '2-digit',
             hour12: true
         }).format(new Date()).replace(',', '').toUpperCase();
+    }
+
+    function formatGlobalUpdateCooldown(ms) {
+        const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        if (totalSeconds >= 3600) {
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        }
+
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function renderGlobalUpdateState(timestampLine, button, failureBox, meta) {
+        timestampLine.textContent = `Last Global Racing Skill Update: ${meta.lastGlobalUpdate || 'Never'}`;
+        failureBox.replaceChildren();
+
+        button.style.opacity = '';
+        button.style.cursor = 'pointer';
+        button.style.pointerEvents = '';
+
+        if (meta.failedPages.length) {
+            button.disabled = true;
+            button.textContent = 'Complete';
+            button.style.opacity = '0.55';
+            button.style.cursor = 'default';
+            button.style.pointerEvents = 'none';
+
+            const cooldownNote = document.createElement('div');
+            cooldownNote.textContent = 'Cooldown begins after failed pages are manually viewed.';
+
+            const count = meta.failedPages.length;
+            const first = document.createElement('div');
+            first.textContent = `${count} Page(s) unsuccessfully updated.`;
+
+            const second = document.createElement('div');
+            second.appendChild(document.createTextNode('Failed page(s): '));
+
+            meta.failedPages.forEach((pageNumber, index) => {
+                if (index) second.appendChild(document.createTextNode(', '));
+                const link = document.createElement('a');
+                link.href = buildHofPageUrl(new URL(location.href).searchParams.get('sr') || '', pageNumber);
+                link.textContent = String(pageNumber);
+                second.appendChild(link);
+            });
+            second.appendChild(document.createTextNode('.'));
+
+            const third = document.createElement('div');
+            third.textContent = 'View failed pages to update manually.';
+
+            failureBox.append(cooldownNote, first, second, third);
+            return 0;
+        }
+
+        const lastGlobalUpdateAt = Number(meta.lastGlobalUpdateAt) || 0;
+        const remainingMs = lastGlobalUpdateAt
+            ? Math.max(0, CART_GLOBAL_UPDATE_COOLDOWN_MS - (Date.now() - lastGlobalUpdateAt))
+            : 0;
+
+        if (remainingMs > 0) {
+            button.disabled = true;
+            button.textContent = formatGlobalUpdateCooldown(remainingMs);
+            button.style.opacity = '0.55';
+            button.style.cursor = 'default';
+            button.style.pointerEvents = 'none';
+            return remainingMs;
+        }
+
+        button.disabled = false;
+        button.textContent = 'Update All';
+        return 0;
     }
 
     function renderCartSummary(container, manifest) {
@@ -3204,10 +3334,30 @@ HWUS_getCurrentPlayerId();
             .hwus-cart-header-grid {
                 width: 80%;
                 margin: 8px auto 4px;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: center;
+                row-gap: 5px;
                 font-weight: bold;
                 font-size: 13px;
             }
+            .hwus-cart-global-time,
             .hwus-cart-tracker-title {
+                text-align: center;
+            }
+            .hwus-cart-update-action {
+                text-align: center;
+            }
+            .hwus-cart-header-grid .btn {
+                font: inherit;
+            }
+            .hwus-cart-failures {
+                width: 80%;
+                margin: 4px auto 7px;
+                color: #800;
+                font-size: 11px;
+                line-height: 1.35;
+                font-weight: normal;
                 text-align: center;
             }
             .hwus-cart-summary-wrap {
@@ -8107,11 +8257,13 @@ HWUS_getCurrentPlayerId();
     const params = new URLSearchParams(location.search);
     const cmd = params.get('cmd');
 
-    const profileID = params.get('ID');
-    const isProfile = cmd === 'player' && /^\d+$/.test(profileID || '');
-    const isOutgoingFight = cmd === 'fight' && /^\d+$/.test(profileID || '');
+    const isOutgoingFight = cmd === 'fight' && /^\d+$/.test(params.get('ID') || '');
     const battleLogID = params.get('id');
     const isBattleLog = cmd === 'battlel' && /^\d+$/.test(battleLogID || '');
+    const profileID = cmd === 'player' && /^\d+$/.test(params.get('ID') || '')
+        ? params.get('ID')
+        : null;
+    const isProfile = !!profileID;
 
     function findBattleLogOverviewTable() {
         return [...document.querySelectorAll('table')].find(table => {
@@ -8134,7 +8286,7 @@ HWUS_getCurrentPlayerId();
         !isBattleLog &&
         !!battleLogOverviewTable;
 
-    if (!isProfile && !isOutgoingFight && !isBattleLog && !isBattleLogOverview) return;
+    if (!isOutgoingFight && !isBattleLog && !isBattleLogOverview && !isProfile) return;
 
     const MY_ID = HWUS_getCurrentPlayerId();
     if (!MY_ID) return;
@@ -8183,7 +8335,6 @@ HWUS_getCurrentPlayerId();
                 wins: 0,
                 losses: 0,
                 stalemates: 0,
-                lastAddedAt: 0,
                 seen: {}
             };
         }
@@ -8206,8 +8357,6 @@ HWUS_getCurrentPlayerId();
         else if (result === 'stalemate') {
             record.stalemates = Math.max(0, record.stalemates + amount);
         }
-
-        if (amount > 0) record.lastAddedAt = Date.now();
     }
 
     function makeSeenEntry(result, source, extra = {}) {
@@ -8389,7 +8538,13 @@ HWUS_getCurrentPlayerId();
             source: candidate.source,
             timestamp: candidateTime,
             text: String(candidate.text || ''),
-            result: candidate.result
+            result: candidate.result,
+            attackerId: /^\d+$/.test(String(candidate.attackerId || ''))
+                ? String(candidate.attackerId)
+                : null,
+            defenderId: /^\d+$/.test(String(candidate.defenderId || ''))
+                ? String(candidate.defenderId)
+                : null
         };
     }
 
@@ -8747,7 +8902,9 @@ HWUS_getCurrentPlayerId();
             if (latestFight) {
                 setLatestFight(record, {
                     ...latestFight,
-                    result
+                    result,
+                    attackerId: fightMetadata.attackerId,
+                    defenderId: fightMetadata.defenderId
                 });
             }
         }
@@ -8841,14 +8998,15 @@ HWUS_getCurrentPlayerId();
             const battleLogKey = `battlel:${battleIDMatch[1]}`;
             const record = ensureOpponent(state, opponent.id, opponent.name);
 
-            // The Battle Log is the authoritative source for the latest-fight
-            // display. This is intentionally opponent-level metadata and does
-            // not depend on battle IDs, compact keys, or reconciliation.
+            // Battle Log time is authoritative for the latest-fight display,
+            // independently of whether this row is already represented in the ledger.
             const battleTimestamp = parseBattleLogTimestamp(timeCell.textContent || '');
             if (battleTimestamp) {
                 setLatestFight(record, {
                     ...battleTimestamp,
-                    result
+                    result,
+                    attackerId: attacker.id,
+                    defenderId: defender.id
                 });
             }
 
@@ -8929,21 +9087,6 @@ HWUS_getCurrentPlayerId();
         table.parentNode.insertBefore(status, table);
     }
 
-    function formatLatestFight(record) {
-        const latest = record?.latestFight;
-        if (!latest || typeof latest !== 'object') return '—';
-
-        const resultLabel =
-            latest.result === 'win' ? 'Win' :
-            latest.result === 'loss' ? 'Loss' :
-            latest.result === 'stalemate' ? 'Stalemate' : '';
-
-        const text = String(latest.text || '').trim();
-        if (!text) return resultLabel || '—';
-
-        return resultLabel ? `${text} — ${resultLabel}` : text;
-    }
-
     function findProfileJournalTable() {
         const profileLabel = [...document.querySelectorAll('td b u')].find(node =>
             (node.textContent || '').trim().toLowerCase() === 'profile:'
@@ -8958,6 +9101,217 @@ HWUS_getCurrentPlayerId();
         }) || null;
     }
 
+    function getCurrentDisplayedName(id, fallback = '') {
+        const wanted = String(id || '');
+        if (!/^\d+$/.test(wanted)) return String(fallback || '');
+
+        if (wanted === MY_ID) {
+            const selfLink = document.querySelector(
+                '.left-panel .pname a[href*="cmd=player"][href*="ID="]'
+            );
+            if (HWUS_extractPlayerId(selfLink) === wanted) {
+                const name = (selfLink.textContent || '').trim();
+                if (name) return name;
+            }
+        }
+
+        const links = [...document.querySelectorAll('a[href*="cmd=player"][href*="ID="]')];
+        const match = links.find(link => HWUS_extractPlayerId(link) === wanted && (link.textContent || '').trim());
+        return match ? (match.textContent || '').trim() : String(fallback || `Hobo ${wanted}`);
+    }
+
+    function syntheticMomentFromTimestamp(timestamp) {
+        const date = new Date(Number(timestamp));
+        if (!Number.isFinite(date.getTime())) return null;
+        return makeSyntheticMoment(
+            date.getMonth() + 1,
+            date.getDate(),
+            {
+                hour: date.getHours(),
+                minute: date.getMinutes(),
+                second: date.getSeconds()
+            }
+        );
+    }
+
+    function getLatestFightOrientation(record) {
+        const latest = record?.latestFight;
+        if (!latest || typeof latest !== 'object') return null;
+
+        if (
+            /^\d+$/.test(String(latest.attackerId || '')) &&
+            /^\d+$/.test(String(latest.defenderId || ''))
+        ) {
+            return {
+                attackerId: String(latest.attackerId),
+                defenderId: String(latest.defenderId)
+            };
+        }
+
+        // v4.14 stored orientation on seen entries but not on latestFight itself.
+        // Recover it once from the matching timestamp/result when possible.
+        const targetMoment = syntheticMomentFromTimestamp(latest.timestamp);
+        if (!Number.isFinite(targetMoment)) return null;
+
+        const candidates = Object.values(record.seen || {})
+            .filter(entry =>
+                entry &&
+                typeof entry === 'object' &&
+                entry.result === latest.result &&
+                /^\d+$/.test(String(entry.attackerId || '')) &&
+                /^\d+$/.test(String(entry.defenderId || '')) &&
+                Number.isFinite(Number(entry.fightMoment))
+            )
+            .map(entry => ({
+                attackerId: String(entry.attackerId),
+                defenderId: String(entry.defenderId),
+                delta: momentDifferenceSeconds(Number(entry.fightMoment), targetMoment)
+            }))
+            .filter(entry => entry.delta <= BATTLE_TIME_TOLERANCE_SECONDS)
+            .sort((a, b) => a.delta - b.delta);
+
+        return candidates[0] || null;
+    }
+
+    function currentGameTimestamp() {
+        const dateText = (document.querySelector('.clock i')?.textContent || '').trim();
+        const dateMatch = dateText.match(/^([A-Za-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?$/i);
+        const clock = parseClockParts(document.querySelector('#clock')?.textContent || '');
+        if (!dateMatch || !clock) return Date.now();
+
+        return inferAbsoluteFightTime(
+            monthNumber(dateMatch[1]),
+            Number(dateMatch[2]),
+            clock
+        ) || Date.now();
+    }
+
+    function addCalendarMonthsClamped(date, count) {
+        const result = new Date(date.getTime());
+        const originalDay = result.getDate();
+        result.setDate(1);
+        result.setMonth(result.getMonth() + count);
+        const lastDay = new Date(
+            result.getFullYear(),
+            result.getMonth() + 1,
+            0,
+            result.getHours(),
+            result.getMinutes(),
+            result.getSeconds(),
+            result.getMilliseconds()
+        ).getDate();
+        result.setDate(Math.min(originalDay, lastDay));
+        return result;
+    }
+
+    function addCalendarYearsClamped(date, count) {
+        const result = new Date(date.getTime());
+        const month = result.getMonth();
+        const day = result.getDate();
+        result.setDate(1);
+        result.setFullYear(result.getFullYear() + count);
+        result.setMonth(month);
+        const lastDay = new Date(
+            result.getFullYear(),
+            month + 1,
+            0,
+            result.getHours(),
+            result.getMinutes(),
+            result.getSeconds(),
+            result.getMilliseconds()
+        ).getDate();
+        result.setDate(Math.min(day, lastDay));
+        return result;
+    }
+
+    function formatFightElapsed(timestamp) {
+        const start = new Date(Number(timestamp));
+        const end = new Date(currentGameTimestamp());
+        if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return '—';
+        if (end < start) return '0s';
+
+        let years = 0;
+        while (addCalendarYearsClamped(start, years + 1) <= end) years += 1;
+        if (years > 0) return `${years}y`;
+
+        let months = 0;
+        while (months < 11 && addCalendarMonthsClamped(start, months + 1) <= end) months += 1;
+        if (months > 0) {
+            const monthAnchor = addCalendarMonthsClamped(start, months);
+            const days = Math.floor((end - monthAnchor) / 86400000);
+            return `${months}m ${Math.max(0, days)}d`;
+        }
+
+        const totalSeconds = Math.max(0, Math.floor((end - start) / 1000));
+        const days = Math.floor(totalSeconds / 86400);
+        if (days >= 7) {
+            const weeks = Math.floor(days / 7);
+            return `${weeks}w ${days % 7}d`;
+        }
+
+        if (days >= 1) {
+            const hours = Math.floor((totalSeconds % 86400) / 3600);
+            return `${days}d ${hours}h`;
+        }
+
+        const hours = Math.floor(totalSeconds / 3600);
+        if (hours >= 1) {
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            return `${hours}h ${minutes}m`;
+        }
+
+        const minutes = Math.floor(totalSeconds / 60);
+        if (minutes >= 1) {
+            return `${minutes}m ${totalSeconds % 60}s`;
+        }
+
+        return `${totalSeconds}s`;
+    }
+
+    function buildProfileLatestFightLine(record) {
+        const latest = record?.latestFight;
+        if (!latest || typeof latest !== 'object' || !Number.isFinite(Number(latest.timestamp))) {
+            return null;
+        }
+
+        const orientation = getLatestFightOrientation(record);
+        const attackerId = orientation?.attackerId || MY_ID;
+        const defenderId = orientation?.defenderId || profileID;
+
+        const myFallback = attackerId === MY_ID || defenderId === MY_ID ? '' : `Hobo ${MY_ID}`;
+        const opponentFallback = record.name || `Hobo ${profileID}`;
+
+        const attackerName = getCurrentDisplayedName(
+            attackerId,
+            attackerId === MY_ID ? myFallback : opponentFallback
+        );
+        const defenderName = getCurrentDisplayedName(
+            defenderId,
+            defenderId === MY_ID ? myFallback : opponentFallback
+        );
+
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'padding:0 6px 5px;color:#555;font-size:11px';
+        wrap.appendChild(document.createTextNode(`Last: ${attackerName} ▸ ${defenderName} `));
+
+        const resultMark = document.createElement('span');
+        if (latest.result === 'win') {
+            resultMark.textContent = '▲';
+            resultMark.style.color = '#00aa00';
+        } else if (latest.result === 'loss') {
+            resultMark.textContent = '▼';
+            resultMark.style.color = '#aa0000';
+        } else {
+            resultMark.textContent = '◆';
+            resultMark.style.color = '#666666';
+        }
+        resultMark.style.fontWeight = 'bold';
+
+        wrap.appendChild(resultMark);
+        wrap.appendChild(document.createTextNode(`  (◴ ${formatFightElapsed(latest.timestamp)})`));
+        return wrap;
+    }
+
     function renderProfileFightRecord() {
         if (!isProfile || profileID === MY_ID) return false;
 
@@ -8968,8 +9322,7 @@ HWUS_getCurrentPlayerId();
         const wins = Math.max(0, Number(record.wins) || 0);
         const losses = Math.max(0, Number(record.losses) || 0);
         const stalemates = Math.max(0, Number(record.stalemates) || 0);
-        const totalRecorded = wins + losses + stalemates;
-        if (totalRecorded <= 0) return false;
+        if (wins + losses + stalemates <= 0) return false;
 
         const journalTable = findProfileJournalTable();
         if (!journalTable || document.getElementById('hw-fight-record-profile')) return false;
@@ -8993,22 +9346,17 @@ HWUS_getCurrentPlayerId();
         ].join(';');
 
         const heading = document.createElement('div');
-        heading.style.cssText = [
-            'padding:3px 5px',
-            'background:#ccc',
-            'font-weight:bold'
-        ].join(';');
+        heading.style.cssText = 'padding:3px 5px;background:#ccc;font-weight:bold';
         heading.textContent = 'Fight Record';
 
         const tally = document.createElement('div');
         tally.style.cssText = 'padding:5px 6px 2px';
         tally.textContent = `W ${wins}   L ${losses}   S ${stalemates}   Win ${winRate}`;
 
-        const lastEntry = document.createElement('div');
-        lastEntry.style.cssText = 'padding:0 6px 5px;color:#555;font-size:11px';
-        lastEntry.textContent = `Last entry: ${formatLatestFight(record)}`;
+        box.append(heading, tally);
+        const latestLine = buildProfileLatestFightLine(record);
+        if (latestLine) box.appendChild(latestLine);
 
-        box.append(heading, tally, lastEntry);
         journalTable.insertAdjacentElement('afterend', box);
         return true;
     }
@@ -9154,14 +9502,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.10',
+    version: '4.15',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '8511c2dc4e5ba7fd5f14765b698fd5be6c7dbb3136c5e0e5a7befcaadc6852ee';
+const HWUS_RELEASE_SHA256 = '13d949e9b311e5d909d9cf8e98b2eed5fe8fbbc926539bcc85765c135b7149f2';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -9221,7 +9569,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.10 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.15 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
@@ -9281,8 +9629,3 @@ function HWUS_renderIntegrityFailure() {
         HWUS_officialBuild();
     }
 })();
-//CHANGELOG
-//v4.11: Removed the automated Super-Cart HoF Update All fetch sweep; HoF tracking now updates only from pages the user manually views.
-//v4.12: Added existing Fight Record Tracker W/L/S/Win summaries beneath Personal Journal on profiles with recorded rivalry history.
-//v4.13: Added the most recently recorded fight-entry date/time to profile Fight Record boxes.
-//v4.14: Fight Record profile latest-entry metadata now uses the newest Battle Log row for that opponent when available, otherwise the native HoboWars fight-page date/clock, and displays the corresponding W/L/S outcome.
