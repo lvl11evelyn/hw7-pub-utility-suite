@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.16
+// @version      4.17
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -9495,7 +9495,7 @@ HWUS_getCurrentPlayerId();
 
 // ============================================================================
 // MODULE 14: SWIM TEAM TOPBAR
-// Responsive crop of the BronxMe Swim Team image, anchored to native top-center.
+// Fixed crop of the BronxMe Swim Team image, kept in native topbar flow.
 // ============================================================================
 (function () {
     'use strict';
@@ -9544,26 +9544,21 @@ HWUS_getCurrentPlayerId();
     const content = document.querySelector('.top-center');
     if (!content || document.getElementById('hwus-swim-team-topbar')) return;
 
-    // Preserve the original crop geometry as ratios rather than viewport pixels.
-    // Canonical box: 350x60. Canonical image: 725x399 at (-15,-56).
-    // The box occupies the rightmost 40% of .top-center, capped at its original
-    // 350px width; every image dimension/offset scales from that same box.
-    const computedPosition = getComputedStyle(content).position;
-    if (computedPosition === 'static') {
-        content.style.position = 'relative';
-    }
-
     const block = document.createElement('div');
     block.id = 'hwus-swim-team-topbar';
 
+    // The crop itself is invariant. Keep it in document flow so it reserves
+    // exactly its own topbar space instead of painting over native geometry.
     Object.assign(block.style, {
-        width: 'min(350px, 40%)',
-        aspectRatio: '350 / 60',
+        display: 'block',
+        flex: '0 0 350px',
+        width: '350px',
+        minWidth: '350px',
+        maxWidth: '350px',
+        height: '61px',
+        minHeight: '61px',
+        maxHeight: '61px',
         overflow: 'clip',
-        position: 'absolute',
-        zIndex: '9999',
-        top: '2px',
-        left: '60%',
         boxSizing: 'border-box',
         outline: 'rgb(95, 215, 255) outset 3px',
         pointerEvents: 'none'
@@ -9575,14 +9570,15 @@ HWUS_getCurrentPlayerId();
     image.referrerPolicy = 'no-referrer';
     image.draggable = false;
 
+    // Preserve the personal module's image geometry exactly.
     Object.assign(image.style, {
         display: 'block',
-        width: '207.142857%',      // 725 / 350
-        height: 'auto',
+        width: '725px',
+        height: '399px',
         maxWidth: 'none',
         position: 'relative',
-        top: '-93.333333%',        // -56 / 60
-        left: '-4.285714%'         // -15 / 350
+        top: '-56px',
+        left: '-15px'
     });
 
     block.appendChild(image);
@@ -9600,14 +9596,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.16',
+    version: '4.17',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'c08dd6ae83e3588d08922cfbfef9fcd736b4316be4133bfd746669febbfb9a3f';
+const HWUS_RELEASE_SHA256 = '6edaca2413067f8e645073d8d0af36e578c17e30dd11aa927a8c3aa8f65e2b1d';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -9667,7 +9663,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.16 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.17 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
