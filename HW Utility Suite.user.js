@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.17
+// @version      4.18
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -9547,10 +9547,8 @@ HWUS_getCurrentPlayerId();
     const block = document.createElement('div');
     block.id = 'hwus-swim-team-topbar';
 
-    // The crop itself is invariant. Keep it in document flow so it reserves
-    // exactly its own topbar space instead of painting over native geometry.
     Object.assign(block.style, {
-        display: 'block',
+        display: 'inline-block',
         flex: '0 0 350px',
         width: '350px',
         minWidth: '350px',
@@ -9570,7 +9568,6 @@ HWUS_getCurrentPlayerId();
     image.referrerPolicy = 'no-referrer';
     image.draggable = false;
 
-    // Preserve the personal module's image geometry exactly.
     Object.assign(image.style, {
         display: 'block',
         width: '725px',
@@ -9582,7 +9579,7 @@ HWUS_getCurrentPlayerId();
     });
 
     block.appendChild(image);
-    content.insertBefore(block, content.firstChild);
+    content.insertAfter(block, content.lastChild);
 })();
 
 }
