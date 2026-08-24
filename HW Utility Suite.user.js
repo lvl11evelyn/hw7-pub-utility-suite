@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.15
-// @description  Configurable HW1 Utility Suite: 13 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
+// @version      4.16
+// @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
 // @supportURL   https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues
@@ -44,7 +44,8 @@ const HWUS_MODULES = Object.freeze([
     [10, 'Dynamic Game Clock'],
     [11, 'Recycling Bin Quick-Add'],
     [12, 'Fight Skill Recap'],
-    [13, 'Fight Record Tracker']
+    [13, 'Fight Record Tracker'],
+    [14, 'Swim Team Topbar']
 ]);
 
 function HWUS_loadModuleStates() {
@@ -9491,6 +9492,103 @@ HWUS_getCurrentPlayerId();
         }
     }
 })();
+
+// ============================================================================
+// MODULE 14: SWIM TEAM TOPBAR
+// Responsive crop of the BronxMe Swim Team image, anchored to native top-center.
+// ============================================================================
+(function () {
+    'use strict';
+
+    if (!HWUS_isModuleEnabled(14)) return;
+
+    function isLivingAreaPage() {
+        return /^https:\/\/www\.hobowars\.com\/game\/game\.php\?sr=\d+(?:&cmd=)?(?:&w=(?:news_hide|mail_hide))?$/.test(
+            location.href
+        );
+    }
+
+    function removeInviteFriendsBlock() {
+        if (!isLivingAreaPage()) return;
+
+        const accountLink = document.querySelector(
+            '.content-area #alie[href*="cmd=preferences"][href*="do=cchar"]'
+        );
+
+        const anchor = accountLink?.closest('div');
+        if (!anchor) return;
+
+        const referralLink = document.querySelector(
+            '.content-area a[href*="cmd=rfriend"]'
+        );
+
+        if (!referralLink) return;
+
+        const end = referralLink.nextSibling?.nodeName === 'BR'
+            ? referralLink.nextSibling
+            : referralLink;
+
+        let node = anchor.nextSibling;
+
+        while (node) {
+            const next = node.nextSibling;
+            node.remove();
+
+            if (node === end) break;
+            node = next;
+        }
+    }
+
+    removeInviteFriendsBlock();
+
+    const content = document.querySelector('.top-center');
+    if (!content || document.getElementById('hwus-swim-team-topbar')) return;
+
+    // Preserve the original crop geometry as ratios rather than viewport pixels.
+    // Canonical box: 350x60. Canonical image: 725x399 at (-15,-56).
+    // The box occupies the rightmost 40% of .top-center, capped at its original
+    // 350px width; every image dimension/offset scales from that same box.
+    const computedPosition = getComputedStyle(content).position;
+    if (computedPosition === 'static') {
+        content.style.position = 'relative';
+    }
+
+    const block = document.createElement('div');
+    block.id = 'hwus-swim-team-topbar';
+
+    Object.assign(block.style, {
+        width: 'min(350px, 40%)',
+        aspectRatio: '350 / 60',
+        overflow: 'clip',
+        position: 'absolute',
+        zIndex: '9999',
+        top: '2px',
+        left: '60%',
+        boxSizing: 'border-box',
+        outline: 'rgb(95, 215, 255) outset 3px',
+        pointerEvents: 'none'
+    });
+
+    const image = document.createElement('img');
+    image.src = 'https://bronxme.com/swimteamdm.php';
+    image.alt = 'Hobowars Swim Team';
+    image.referrerPolicy = 'no-referrer';
+    image.draggable = false;
+
+    Object.assign(image.style, {
+        display: 'block',
+        width: '207.142857%',      // 725 / 350
+        height: 'auto',
+        maxWidth: 'none',
+        position: 'relative',
+        top: '-93.333333%',        // -56 / 60
+        left: '-4.285714%'         // -15 / 350
+    });
+
+    block.appendChild(image);
+    content.insertBefore(block, content.firstChild);
+})();
+
 }
 
 // ============================================================================
@@ -9502,14 +9600,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.15',
+    version: '4.16',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '13d949e9b311e5d909d9cf8e98b2eed5fe8fbbc926539bcc85765c135b7149f2';
+const HWUS_RELEASE_SHA256 = 'c08dd6ae83e3588d08922cfbfef9fcd736b4316be4133bfd746669febbfb9a3f';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -9569,7 +9667,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.15 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.16 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
