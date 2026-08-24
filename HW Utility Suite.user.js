@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.18
+// @version      4.19
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -9149,8 +9149,6 @@ HWUS_getCurrentPlayerId();
             };
         }
 
-        // v4.14 stored orientation on seen entries but not on latestFight itself.
-        // Recover it once from the matching timestamp/result when possible.
         const targetMoment = syntheticMomentFromTimestamp(latest.timestamp);
         if (!Number.isFinite(targetMoment)) return null;
 
@@ -9495,7 +9493,6 @@ HWUS_getCurrentPlayerId();
 
 // ============================================================================
 // MODULE 14: SWIM TEAM TOPBAR
-// Fixed crop of the BronxMe Swim Team image, kept in native topbar flow.
 // ============================================================================
 (function () {
     'use strict';
@@ -9548,8 +9545,8 @@ HWUS_getCurrentPlayerId();
     block.id = 'hwus-swim-team-topbar';
 
     Object.assign(block.style, {
-        display: 'inline-block',
-        flex: '0 0 350px',
+        display: 'block',
+		float: 'right',
         width: '350px',
         minWidth: '350px',
         maxWidth: '350px',
@@ -9579,7 +9576,7 @@ HWUS_getCurrentPlayerId();
     });
 
     block.appendChild(image);
-    content.insertAfter(block, content.lastChild);
+    content.insertBefore(block, content.firstChild);
 })();
 
 }
