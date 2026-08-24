@@ -9554,7 +9554,7 @@ HWUS_getCurrentPlayerId();
         maxHeight: '63px',
         overflow: 'clip',
         boxSizing: 'border-box',
-        outline: 'rgb(95, 215, 255) outset 3px',
+        outline: 'rgb(95, 215, 255) outset 2px',
         pointerEvents: 'none'
     });
 
