@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.22
+// @version      4.23
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -7996,25 +7996,32 @@ HWUS_getCurrentPlayerId();
         return normalizeSpace(parts.join(' '));
     }
 
-    function classifyOutcome(effectText) {
-        const text = normalizeSpace(effectText);
+	function classifyOutcome(effectText, skill) {
+	    const text = normalizeSpace(effectText);
 
-        if (/fizzles?\s+out\s+thanks\s+to\b/i.test(text) && /Cabana Club Card/i.test(text)) {
-            return 'fizzle';
-        }
+	    if (
+	        /fizzles?\s+out\s+thanks\s+to\b/i.test(text) &&
+	        /Cabana Club Card/i.test(text)
+	    ) {
+	        return 'fizzle';
+	    }
 
-        if (/Filthy Socks/i.test(text) && /screw(?:s|ed)?\s+up\s+the\s+skill/i.test(text)) {
-            return 'screw-up';
-        }
+	    if (
+	        /Filthy Socks/i.test(text) &&
+	        /screw(?:s|ed)?\s+up\s+the\s+skill/i.test(text)
+	    ) {
+	        return 'screw-up';
+	    }
 
-		    if (
-			/\buses\s+(?:LOL\s+)?(?:Takedown|Cripple)\s*!\s*It\s+misses\./i.test(text)
-		) {
-			return 'failure';
-		}
+	    if (
+	        /^(?:LOL\s+)?(?:Takedown|Cripple)$/i.test(normalizeSpace(skill)) &&
+	        /^It\s+misses\.$/i.test(text)
+	    ) {
+	        return 'miss';
+	    }
 
-        return 'success';
-    }
+	    return 'success';
+	}
 
     function buildPanel(parsed) {
         const panel = document.createElement('section');
@@ -8075,9 +8082,12 @@ HWUS_getCurrentPlayerId();
 
         const annotation = document.createElement('span');
         annotation.className = `${MODULE}-annotation`;
-        annotation.textContent = event.outcome === 'fizzle'
-            ? ' (fizzle)'
-            : ' (screw up)';
+        annotation.textContent =
+		    event.outcome === 'fizzle'
+		        ? ' (fizzle)'
+		        : event.outcome === 'miss'
+		            ? ' (miss)'
+		            : ' (screw up)';
 
         cell.title = event.effectText;
         cell.append(skill, annotation);
