@@ -27,6 +27,7 @@ HW Utility Suite installs a centralized control panel into the native HoboWars *
 11. [Recycling Bin Quick-Add](#11-recycling-bin-quick-add)
 12. [Fight Skill Recap](#12-fight-skill-recap)
 13. [Fight Record Tracker](#13-fight-record-tracker)
+14. [Topbar Swim Times](#14-topbar-swim-times)
 
 ### 1. UFC Penalty Info Toggle
 
@@ -79,3 +80,7 @@ Adds a compact skill-use summary to completed fights, listing skills in the orde
 ### 13. Fight Record Tracker
 
 Tracks Wins, Losses, and Stalemates on a per-Hobo basis for completed fights. The module supports battle-log importing, duplicate protection, and reconciliation between overview entries and fully opened fight records so the same fight is not counted twice.
+
+### 14. Topbar Swim Times
+
+Places a small box in the topbar that provides the current day's- along with the two days to follow- upcoming Swim blocks. These times are known to occasionally deviate from the predicted schedule, although this occurs very infrequently. Any irregular Swim times that don't align with this display will be corrected at the earliest convenience.
