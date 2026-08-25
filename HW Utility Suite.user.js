@@ -7962,7 +7962,7 @@ HWUS_getCurrentPlayerId();
             if (invocationText !== expected) continue;
 
             const effectText = readEffectText(font.parentElement);
-            const outcome = classifyOutcome(effectText);
+            const outcome = classifyOutcome(effectText, skill);
 
             events.push({ actor, skill, outcome, effectText });
 
