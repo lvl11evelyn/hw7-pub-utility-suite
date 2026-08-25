@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.23
+// @version      4.24
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -9508,9 +9508,10 @@ HWUS_getCurrentPlayerId();
 })();
 
 // ============================================================================
-// MODULE 14: SWIM TEAM TOPBAR
+// MODULE 14: SWIM TIMES
+// Adds 3 days of upcoming Swim blocks in the topbar.
 // ============================================================================
-(function () {
+(() => {
     'use strict';
 
     if (!HWUS_isModuleEnabled(14)) return;
@@ -9554,46 +9555,162 @@ HWUS_getCurrentPlayerId();
 
     removeInviteFriendsBlock();
 
-    const content = document.querySelector('.top-center');
-    if (!content || document.getElementById('hwus-swim-team-topbar')) return;
 
-    const block = document.createElement('div');
-    block.id = 'hwus-swim-team-topbar';
 
-    Object.assign(block.style, {
-        display: 'inline-block',
-        width: '350px',
-        minWidth: '350px',
-        maxWidth: '350px',
-        height: '63px',
-        minHeight: '63px',
-        maxHeight: '63px',
-        overflow: 'clip',
-        boxSizing: 'border-box',
-        outline: 'rgb(95, 215, 255) outset 2px',
-        pointerEvents: 'none'
-    });
+    const MODULE = 'hw-swim-times';
 
-    const image = document.createElement('img');
-    image.src = 'https://bronxme.com/swimteamdm.php';
-    image.alt = 'Hobowars Swim Team';
-    image.referrerPolicy = 'no-referrer';
-    image.draggable = false;
+// ------------------------------------------------------------------------
+// When a shift occurs, update these to the new date/state.
+// ------------------------------------------------------------------------
+        const ANCHOR_DATE = '2026-08-26';
+        const ANCHOR_STATE = 2;
 
-    Object.assign(image.style, {
-        display: 'block',
-        width: '725px',
-        height: '399px',
-        maxWidth: 'none',
-        position: 'relative',
-        top: '-56px',
-        left: '-15px'
-    });
+        const SWIM_STATES = [
+            '12/3', //     = 0
+            '11/2', //     = 1
+            '10/1', //     = 2
+            '9', //        = 3
+            '8', //        = 4
+            '7', //        = 5
+            '6', //        = 6
+            '5', //        = 7
+            '4' //         = 8
+        ];
 
-    block.appendChild(image);
-    content.append(block);
-})();
+        const MONTHS = [
+            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
 
+        const MS_PER_DAY = 86400000;
+
+        if (document.getElementById(MODULE)) return;
+
+        const topbar = document.querySelector('.top-center');
+        if (!topbar) return;
+
+        const block = document.createElement('div');
+        block.id = MODULE;
+
+        const pre = document.createElement('pre');
+        pre.textContent = buildDisplay();
+
+        Object.assign(block.style, {
+            boxSizing: 'border-box',
+            width: '110px',
+            margin: '0',
+            padding: '0 4px',
+            background: 'black',
+            outline: '2px inset #555',
+            flex: '0 0 auto',
+            display: 'inline-block'
+        });
+
+        Object.assign(pre.style, {
+            margin: '0',
+            padding: '0',
+            border: '0',
+            background: 'none',
+            color: 'cyan',
+            font: 'bold 14px/1.5 monospace',
+            whiteSpace: 'pre',
+            textAlign: 'left'
+        });
+
+        block.appendChild(pre);
+        topbar.appendChild(block);
+
+        function buildDisplay() {
+            const today = getHoboDate();
+
+            return [0, 1, 2]
+                .map(offset => {
+                    const date = addDays(today, offset);
+                    const state = getSwimState(date);
+
+                    return formatLine(date, SWIM_STATES[state]);
+                })
+                .join('\n');
+        }
+
+        function getHoboDate(now = new Date()) {
+            // HoboWars clock is fixed AEST / UTC+10.
+            const aest = new Date(now.getTime() + (10 * 60 * 60 * 1000));
+
+            return new Date(Date.UTC(
+                aest.getUTCFullYear(),
+                aest.getUTCMonth(),
+                aest.getUTCDate()
+            ));
+        }
+
+        function getSwimState(targetDate) {
+            const anchorDate = parseDate(ANCHOR_DATE);
+
+            let state = ANCHOR_STATE;
+            let cursor = new Date(anchorDate);
+
+            if (targetDate > anchorDate) {
+                while (cursor < targetDate) {
+                    cursor = addDays(cursor, 1);
+
+                    state = (state + 1) % SWIM_STATES.length;
+
+                    if (cursor.getUTCDay() === 1) {
+                        state = (state + 1) % SWIM_STATES.length;
+                    }
+                }
+
+                return state;
+            }
+
+            while (cursor > targetDate) {
+                // Undo the transition that produced the current date.
+                if (cursor.getUTCDay() === 1) {
+                    state =
+                        (state - 1 + SWIM_STATES.length) %
+                        SWIM_STATES.length;
+                }
+
+                state =
+                    (state - 1 + SWIM_STATES.length) %
+                    SWIM_STATES.length;
+
+                cursor = addDays(cursor, -1);
+            }
+
+            return state;
+        }
+
+        function formatLine(date, state) {
+            const month = MONTHS[date.getUTCMonth()];
+            const day = String(date.getUTCDate()).padStart(2, ' ');
+
+            const [first, second] = state.split('/');
+
+            const hour =
+                String(first).padStart(2, ' ') +
+                (second ? `/${second}` : '');
+
+            return `${month} ${day}: ${hour}`;
+        }
+
+        function parseDate(value) {
+            const [year, month, day] = value
+                .split('-')
+                .map(Number);
+
+            return new Date(Date.UTC(
+                year,
+                month - 1,
+                day
+            ));
+        }
+
+        function addDays(date, amount) {
+            return new Date(date.getTime() + (amount * MS_PER_DAY));
+        }
+    })();
 }
 
 // ============================================================================
@@ -9605,14 +9722,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.17',
+    version: '4.24',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '6edaca2413067f8e645073d8d0af36e578c17e30dd11aa927a8c3aa8f65e2b1d';
+const HWUS_RELEASE_SHA256 = '5b7035b80e5718073fb644402cb9a2aeb3aa735764969ce0f8c4fec6399bbede';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -9672,7 +9789,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.17 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.24 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
