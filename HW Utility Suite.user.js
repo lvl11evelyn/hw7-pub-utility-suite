@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.24
+// @version      4.25
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -9729,7 +9729,7 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '5b7035b80e5718073fb644402cb9a2aeb3aa735764969ce0f8c4fec6399bbede';
+const HWUS_RELEASE_SHA256 = 'bb3c272f805b6a1eccff8f77d9d831ae41b158d01f2acfdabe119984ef401a97';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
