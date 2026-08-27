@@ -45,7 +45,7 @@ const HWUS_MODULES = Object.freeze([
     [11, 'Recycling Bin Quick-Add'],
     [12, 'Fight Skill Recap'],
     [13, 'Fight Record Tracker'],
-    [14, 'Swim Team Topbar']
+    [14, 'Top Bar Swim Times']
 ]);
 
 function HWUS_loadModuleStates() {
@@ -9508,7 +9508,7 @@ HWUS_getCurrentPlayerId();
 })();
 
 // ============================================================================
-// MODULE 14: SWIM TIMES
+// MODULE 14: TOP BAR SWIM TIMES
 // Adds 3 days of upcoming Swim blocks in the topbar.
 // ============================================================================
 (() => {
