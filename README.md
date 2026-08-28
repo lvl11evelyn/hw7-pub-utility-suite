@@ -6,6 +6,13 @@ Use, modification, adaptation, or redistribution of this project for macroing, b
 
 This restriction is fundamental to the project and applies to derivative works and modified distributions.
 
+## Installation
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) if you do not already have a userscript manager.
+2. [Install HW Utility Suite](https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js)
+
+The install link opens the current release directly in your userscript manager.
+
 ## Module Controls
 
 HW Utility Suite currently supports only **The Future** Layout. 
