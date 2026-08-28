@@ -18,7 +18,7 @@ HW Utility Suite installs a centralized control panel into the native HoboWars *
 2. [Feed the Seal](#2-feed-the-seal)
 3. [Collapsible Thread Replies](#3-collapsible-thread-replies)
 4. [Player Stats Tracker](#4-player-stats-tracker)
-5. [Pikie Races Log](#5-pikie-races-log)
+5. [Super-Cart Racing](#5-super-cart-racing)
 6. [Wellness Aid](#6-wellness-aid)
 7. [Equipment Redux](#7-equipment-redux)
 8. [Personal Hitlist Keybinds](#8-personal-hitlist-keybinds)
@@ -45,9 +45,9 @@ The separator bar beneath each Message Board thread reply is converted into a to
 
 Adds a compact history panel to player profiles that records changes to Respect, Level, Money, Life, and Fight Record over time. Only changed values are logged after the initial snapshot, allowing the panel to function as a lightweight profile-history ledger.
 
-### 5. Pikie Races Log
+### 5. Super-Cart Racing
 
-Adds a compact race-history panel to the Pikie interface, grouping Racing Skill gains by date and opponent while maintaining per-group and overall totals. The panel observes and records completed race results as they are displayed and remains independently clearable from the page.
+Adds a compact race-history panel to the Pikie interface, grouping Racing Skill gains by date and opponent while maintaining per-group and overall totals. The panel observes and records completed race results as they are displayed and remains independently clearable from the page. Also adds a Hall of Fame racer skill table with variable sorting that updates as the player manually traverses the Hall of Fame according to the contents of each page. In addition, replaces the link to view the currently signed up racers in your class with a state-aware button that opens a small table on the same page or closes it that gives the same information. Hiding and then clicking View again will refresh the table.
 
 ### 6. Wellness Aid
 
