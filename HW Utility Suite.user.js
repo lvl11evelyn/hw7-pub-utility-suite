@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.28
+// @version      4.29
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -8623,39 +8623,45 @@ HWUS_getCurrentPlayerId();
 
         let cursor = invocationItalic.previousSibling;
 
-        // Skill invocations begin on their own line. Step across the
-        // immediately preceding break/whitespace so we can inspect the
-        // numbered combat line directly before the skill-use message.
-        while (
-            cursor &&
-            (
-                (cursor.nodeType === Node.TEXT_NODE && !cursor.textContent.trim()) ||
-                (cursor.nodeType === Node.ELEMENT_NODE && cursor.tagName === 'BR')
-            )
-        ) {
-            cursor = cursor.previousSibling;
-        }
-
-        const parts = [];
-
+        // Walk upward line-by-line until we reach the most recent numbered
+        // combat round. Unnumbered rat/pet actions can appear between a round
+        // and a skill invocation, so those lines must be skipped rather than
+        // treated as a hard boundary.
         while (cursor) {
-            if (
-                cursor.nodeType === Node.ELEMENT_NODE &&
-                cursor.tagName === 'BR'
+            while (
+                cursor &&
+                (
+                    (cursor.nodeType === Node.TEXT_NODE && !cursor.textContent.trim()) ||
+                    (cursor.nodeType === Node.ELEMENT_NODE && cursor.tagName === 'BR')
+                )
             ) {
-                break;
+                cursor = cursor.previousSibling;
             }
 
-            parts.unshift(cursor.textContent || '');
-            cursor = cursor.previousSibling;
+            if (!cursor) break;
+
+            const parts = [];
+
+            while (
+                cursor &&
+                !(
+                    cursor.nodeType === Node.ELEMENT_NODE &&
+                    cursor.tagName === 'BR'
+                )
+            ) {
+                parts.unshift(cursor.textContent || '');
+                cursor = cursor.previousSibling;
+            }
+
+            const line = normalizeSpace(parts.join(' '));
+            const match = line.match(/^(\d+)\s*[.:)]/);
+
+            if (match) {
+                return Number.parseInt(match[1], 10);
+            }
         }
 
-        const line = normalizeSpace(parts.join(' '));
-        const match = line.match(/^(\d+)\s*[.:)]/);
-
-        return match
-            ? Number.parseInt(match[1], 10)
-            : null;
+        return null;
     }
 
     function readEffectText(invocationItalic) {
@@ -10412,14 +10418,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.28',
+    version: '4.29',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'a21d7ea8c808933914e203be9878955d8c62ed1101a3585c49700b3db0926ecd';
+const HWUS_RELEASE_SHA256 = '085eeba2ae818c8e9fc141af27c6d8168725eb5cde4587c4b903f9ddec403b5d';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -10479,7 +10485,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.28 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.29 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
