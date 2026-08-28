@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.26
+// @version      4.27
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2893,9 +2893,16 @@ HWUS_getCurrentPlayerId();
         reconcileRecentCartNorthernFenceEntries();
 
         // A manually-viewed HOF page is also a valid authoritative observation.
+        // Once every HoF page has been viewed within the same HBT reset window,
+        // that manual traversal becomes the latest complete Racing Skill update.
         const currentRows = parseHofTable(nativeTable, currentPageNumber);
         if (currentRows.length) {
             persistCartPage(currentPageNumber, currentRows, observedAt);
+            recordManualHofPageObservation(
+                currentPageNumber,
+                totalPages,
+                observedAt
+            );
             resolveFailedPage(currentPageNumber);
         }
 
@@ -2921,13 +2928,7 @@ HWUS_getCurrentPlayerId();
         updateButton.textContent = 'Update All';
         actionLine.appendChild(updateButton);
 
-        const title = document.createElement('div');
-        title.className = 'hwus-cart-tracker-title';
-        title.innerHTML = '<strong>Super-Cart Racing Skill Tracker</strong>';
-
-        const headerSpacer = document.createElement('div');
-
-        headerGrid.append(timestampLine, title, headerSpacer);
+        headerGrid.append(timestampLine);
 
         const failureBox = document.createElement('div');
         failureBox.className = 'hwus-cart-failures';
@@ -3202,7 +3203,12 @@ HWUS_getCurrentPlayerId();
                 totalPages: Number(meta.totalPages) || 0,
                 failedPages: Array.isArray(meta.failedPages)
                     ? [...new Set(meta.failedPages.map(Number).filter(Number.isFinite))].sort((a, b) => a - b)
-                    : []
+                    : [],
+                manualResetKey: String(meta.manualResetKey || ''),
+                manualPages: Array.isArray(meta.manualPages)
+                    ? [...new Set(meta.manualPages.map(Number).filter(Number.isFinite))].sort((a, b) => a - b)
+                    : [],
+                manualComplete: meta.manualComplete === true
             };
         } catch {
             return {
@@ -3210,7 +3216,10 @@ HWUS_getCurrentPlayerId();
                 lastGlobalUpdateAt: 0,
                 lastSweepAttempt: 0,
                 totalPages: 0,
-                failedPages: []
+                failedPages: [],
+                manualResetKey: '',
+                manualPages: [],
+                manualComplete: false
             };
         }
     }
@@ -3388,6 +3397,100 @@ HWUS_getCurrentPlayerId();
         saveCartClassAdvances(pruneCartClassAdvances(loadCartClassAdvances(), observedAt));
     }
 
+    function getCartResetKey() {
+        const dateText = normalizeSpace(
+            document.querySelector('.clock i')?.textContent || ''
+        );
+        const clockText = normalizeSpace(
+            document.querySelector('#clock')?.textContent || ''
+        );
+
+        const dateMatch = dateText.match(
+            /([A-Za-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?/i
+        );
+        const timeMatch = clockText.match(
+            /(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)/i
+        );
+
+        if (dateMatch && timeMatch) {
+            let hour = Number(timeMatch[1]) % 12;
+            if (timeMatch[3].toLowerCase() === 'pm') hour += 12;
+
+            const resetHalf = hour >= 12 ? '12' : '00';
+
+            return [
+                dateMatch[1].slice(0, 3).toUpperCase(),
+                String(dateMatch[2]).padStart(2, '0'),
+                resetHalf
+            ].join('-');
+        }
+
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Australia/Brisbane',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            hourCycle: 'h23'
+        }).formatToParts(new Date());
+
+        const values = Object.fromEntries(
+            parts.map(part => [part.type, part.value])
+        );
+
+        const hour = Number(values.hour) || 0;
+        const resetHalf = hour >= 12 ? '12' : '00';
+
+        return `${values.year}-${values.month}-${values.day}-${resetHalf}`;
+    }
+
+    function recordManualHofPageObservation(
+        pageNumber,
+        totalPages,
+        observedAt
+    ) {
+        if (
+            !Number.isFinite(pageNumber) ||
+            !Number.isFinite(totalPages) ||
+            pageNumber < 1 ||
+            totalPages < 1
+        ) {
+            return;
+        }
+
+        const meta = loadCartMeta();
+        const resetKey = getCartResetKey();
+
+        if (meta.manualResetKey !== resetKey) {
+            meta.manualResetKey = resetKey;
+            meta.manualPages = [];
+            meta.manualComplete = false;
+        }
+
+        meta.totalPages = totalPages;
+
+        if (!meta.manualPages.includes(pageNumber)) {
+            meta.manualPages.push(pageNumber);
+            meta.manualPages.sort((a, b) => a - b);
+        }
+
+        if (!meta.manualComplete) {
+            const complete = Array.from(
+                { length: totalPages },
+                (_, index) => index + 1
+            ).every(page => meta.manualPages.includes(page));
+
+            if (complete) {
+                meta.manualComplete = true;
+                meta.lastGlobalUpdate = getGameDateTimeLabel();
+                meta.lastGlobalUpdateAt = observedAt;
+                meta.failedPages = [];
+            }
+        }
+
+        saveCartMeta(meta);
+    }
+
     function resolveFailedPage(pageNumber) {
         const meta = loadCartMeta();
         if (!meta.failedPages.includes(pageNumber)) return;
@@ -3436,7 +3539,7 @@ HWUS_getCurrentPlayerId();
     }
 
     function renderGlobalUpdateState(timestampLine, button, failureBox, meta) {
-        timestampLine.textContent = `Last Global Racing Skill Update: ${meta.lastGlobalUpdate || 'Never'}`;
+        timestampLine.textContent = `Latest Complete Racing Skill Update: ${meta.lastGlobalUpdate || 'Never'}`;
         failureBox.replaceChildren();
 
         button.style.opacity = '';
@@ -3533,7 +3636,7 @@ HWUS_getCurrentPlayerId();
         table.innerHTML = `
             <tbody>
                 <tr>
-                    <td bgcolor="#dddddd" colspan="12" align="center"><strong>Racers Summary</strong></td>
+                    <td bgcolor="#dddddd" colspan="12" align="center"><strong>Super-Cart Racing Skill Summary</strong></td>
                 </tr>
                 <tr>
                     <td bgcolor="#eeeeee" align="center"><strong>Class</strong></td>
@@ -3884,18 +3987,14 @@ HWUS_getCurrentPlayerId();
             .hwus-cart-hof-nav > div:nth-child(2) { text-align: center; }
             .hwus-cart-hof-nav > div:last-child { text-align: right; }
             .hwus-cart-header-grid {
-                width: 80%;
                 margin: 8px auto 4px;
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                align-items: center;
-                row-gap: 5px;
+                display: block;
                 font-weight: bold;
                 font-size: 13px;
             }
-            .hwus-cart-global-time,
-            .hwus-cart-tracker-title {
+            .hwus-cart-global-time {
                 text-align: center;
+                white-space: nowrap;
             }
             .hwus-cart-update-action {
                 text-align: center;
@@ -10308,14 +10407,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.26',
+    version: '4.27',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '51ca4b3d6dd17a198a2a23b8e6cc796eb932e045367ee4e71b547f41441e766c';
+const HWUS_RELEASE_SHA256 = '940bb00e2f6fea7d9b8d60d6598e0ae535151fc0bbca82bb045b920395d9d5a9';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -10375,7 +10474,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.26 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.27 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
