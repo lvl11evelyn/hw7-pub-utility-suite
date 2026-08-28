@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.25
+// @version      4.26
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -27,8 +27,8 @@ const HWUS_CONTENT_AREA_KEY = 'hwUtilitySuite.contentArea.v1';
 
 const HWUS_CONTENT_AREA_DEFAULTS = Object.freeze({
     enabled: false,
-    minWidth: 900,
-    maxWidth: 1400
+    width: 660
+
 });
 
 const HWUS_MODULES = Object.freeze([
@@ -76,26 +76,16 @@ function HWUS_setModuleEnabled(moduleId, enabled) {
 
 function HWUS_normalizeContentAreaSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
-    const clampWidth = (width, fallback) => {
-        const numeric = Math.round(Number(width));
-        return Number.isFinite(numeric)
-            ? Math.min(3000, Math.max(400, numeric))
-            : fallback;
-    };
 
-    const minWidth = clampWidth(
-        source.minWidth,
-        HWUS_CONTENT_AREA_DEFAULTS.minWidth
-    );
-    const maxWidth = Math.max(
-        minWidth,
-        clampWidth(source.maxWidth, HWUS_CONTENT_AREA_DEFAULTS.maxWidth)
-    );
+    const numeric = Math.round(Number(source.width));
+
+    const width = Number.isFinite(numeric)
+        ? Math.min(1200, Math.max(400, numeric))
+        : HWUS_CONTENT_AREA_DEFAULTS.width;
 
     return {
         enabled: source.enabled === true,
-        minWidth,
-        maxWidth
+        width
     };
 }
 
@@ -119,16 +109,40 @@ function HWUS_applyContentAreaSettings() {
     document.getElementById('hwus-content-area-layout')?.remove();
 
     const settings = HWUS_loadContentAreaSettings();
-    if (!settings.enabled) return;
+    const effectiveWidth = settings.enabled
+        ? settings.width
+        : HWUS_CONTENT_AREA_DEFAULTS.width;
 
     const style = document.createElement('style');
     style.id = 'hwus-content-area-layout';
-    style.textContent = `
+
+    const contentAreaRule = settings.enabled
+        ? `
         .content-area {
             margin: 0 auto 0 15px !important;
-            min-width: ${settings.minWidth}px !important;
-            max-width: ${settings.maxWidth}px !important;
+            min-width: ${effectiveWidth}px !important;
+            max-width: ${effectiveWidth}px !important;
+        }`
+        : '';
+
+    style.textContent = `
+        :root {
+            --hwus-content-width: ${effectiveWidth}px;
         }
+
+        /*
+         * MTT fixed placement shares the Utility Suite's authoritative
+         * content-width setting instead of retaining geometry measured before
+         * the content-area rule is applied.
+         *
+         * 15px left gutter + 200px native left panel + content width
+         * + 15px mirrored right gutter = content width + 230px.
+         */
+        #mtt-panel {
+            left: calc(var(--hwus-content-width, 660px) + 230px) !important;
+        }
+
+        ${contentAreaRule}
     `;
 
     document.head.appendChild(style);
@@ -332,7 +346,7 @@ function HWUS_getCurrentPlayerId() {
             margin-top: 4px;
             text-align: center;
             color: #888;
-            font-size: 9px;
+            font-size: 10px;
         }
         #hwus-preferences-panel .hwus-note {
             margin-top: 7px;
@@ -444,57 +458,50 @@ function HWUS_getCurrentPlayerId() {
     const contentAreaWidths = document.createElement('div');
     contentAreaWidths.className = 'hwus-content-area-widths';
 
-    const minLabel = document.createElement('span');
-    minLabel.textContent = 'Min';
+    const widthLabel = document.createElement('span');
+    widthLabel.textContent = 'Width';
 
-    const minInput = document.createElement('input');
-    minInput.type = 'number';
-    minInput.min = '400';
-    minInput.max = '3000';
-    minInput.step = '10';
-    minInput.value = String(contentAreaSettings.minWidth);
-
-    const maxLabel = document.createElement('span');
-    maxLabel.textContent = 'Max';
-
-    const maxInput = document.createElement('input');
-    maxInput.type = 'number';
-    maxInput.min = '400';
-    maxInput.max = '3000';
-    maxInput.step = '10';
-    maxInput.value = String(contentAreaSettings.maxWidth);
+    const widthInput = document.createElement('input');
+    widthInput.type = 'number';
+    widthInput.min = '400';
+    widthInput.max = '1200';
+    widthInput.step = '10';
+    widthInput.value = String(contentAreaSettings.width);
 
     const pxLabel = document.createElement('span');
     pxLabel.textContent = 'px';
 
-    contentAreaWidths.append(minLabel, minInput, maxLabel, maxInput, pxLabel);
+    contentAreaWidths.append(
+        widthLabel,
+        widthInput,
+        pxLabel
+    );
 
     const contentAreaHelp = document.createElement('div');
     contentAreaHelp.className = 'hwus-content-area-help';
-    contentAreaHelp.textContent = 'Global Future-layout .content-area override; left margin is 15px.';
+    contentAreaHelp.style.whiteSpace = 'pre-line';
+    contentAreaHelp.textContent = 'Enabling Custom Content Area Width\nrepositions Content Area adjacent to the Left Panel.';
 
     const syncContentAreaControls = () => {
         const disabled = !contentAreaCheckbox.checked;
-        minInput.disabled = disabled;
-        maxInput.disabled = disabled;
+
+        widthInput.disabled = disabled;
         contentAreaWidths.classList.toggle('hwus-disabled', disabled);
     };
 
     const saveContentAreaControls = () => {
         const saved = HWUS_saveContentAreaSettings({
             enabled: contentAreaCheckbox.checked,
-            minWidth: minInput.value,
-            maxWidth: maxInput.value
+            width: widthInput.value
         });
 
-        minInput.value = String(saved.minWidth);
-        maxInput.value = String(saved.maxWidth);
+        widthInput.value = String(saved.width);
         syncContentAreaControls();
     };
 
+
     contentAreaCheckbox.addEventListener('change', saveContentAreaControls);
-    minInput.addEventListener('change', saveContentAreaControls);
-    maxInput.addEventListener('change', saveContentAreaControls);
+    widthInput.addEventListener('change', saveContentAreaControls);
 
     syncContentAreaControls();
     contentAreaSection.append(
@@ -636,15 +643,27 @@ HWUS_getCurrentPlayerId();
 
     if (!toggle || !info) return;
 
+    function syncUfcToggle() {
+        const visible = getComputedStyle(info).display !== 'none';
+        toggle.style.fontFamily = 'Consolas, monospace';
+        toggle.textContent = visible ? '[▲]' : '[?]';
+        toggle.setAttribute('aria-expanded', String(visible));
+    }
+
     toggle.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopImmediatePropagation();
 
-        info.style.display =
-            getComputedStyle(info).display === 'none'
-            ? 'block'
-        : 'none';
+        const visible = getComputedStyle(info).display !== 'none';
+
+        info.style.display = visible
+            ? 'none'
+            : 'block';
+
+        syncUfcToggle();
     }, true);
+
+    syncUfcToggle();
 })();
 
 // ============================================================================
@@ -1148,7 +1167,7 @@ HWUS_getCurrentPlayerId();
 
     if (!HWUS_isModuleEnabled(3)) return;
 
-    const STORAGE_KEY = 'hw-collapsed-thread-replies-v1';
+    const STORAGE_KEY = 'hw-collapsed-thread-replies-v2';
 
     if (!isThreadPage()) return;
 
@@ -1161,6 +1180,8 @@ HWUS_getCurrentPlayerId();
 
     injectStyles();
     initializeReplies();
+    rebuildCollapsedTabs();
+    initializeBulkControls();
 
     function isThreadPage() {
         const params = new URLSearchParams(window.location.search);
@@ -1183,16 +1204,23 @@ HWUS_getCurrentPlayerId();
         const params = new URLSearchParams(window.location.search);
         const post = params.get('post');
 
-        return /^\d+$/.test(post || '') ? post : null;
+        return /^\d+$/.test(post || '')
+            ? post
+            : null;
     }
 
     function getPageNumber() {
         const pageLinks = Array.from(
-            document.querySelectorAll('a[href*="cmd=gathering"][href*="do=vpost"]')
+            document.querySelectorAll(
+                'a[href*="cmd=gathering"][href*="do=vpost"]'
+            )
         );
 
         for (const link of pageLinks) {
-            if (link.closest('b') && /^\d+$/.test(link.textContent.trim())) {
+            if (
+                link.closest('b') &&
+                /^\d+$/.test(link.textContent.trim())
+            ) {
                 return link.textContent.trim();
             }
         }
@@ -1207,7 +1235,9 @@ HWUS_getCurrentPlayerId();
             Number.isFinite(limit2) &&
             pageSize > 0
         ) {
-            return String(Math.floor(limit1 / pageSize) + 1);
+            return String(
+                Math.floor(limit1 / pageSize) + 1
+            );
         }
 
         return '1';
@@ -1219,23 +1249,38 @@ HWUS_getCurrentPlayerId();
         );
 
         for (const spacer of spacers) {
-            const postId = spacer.id.match(/^tr_spacer_(\d+)$/)?.[1];
+            const postId =
+                spacer.id.match(/^tr_spacer_(\d+)$/)?.[1];
+
             const postRow = postId
-            ? document.querySelector(`#tr_post_${CSS.escape(postId)}`)
-            : null;
+                ? document.querySelector(
+                    `#tr_post_${CSS.escape(postId)}`
+                )
+                : null;
+
             const cell = spacer.cells?.[0];
 
             if (!postId || !postRow || !cell) continue;
 
-            const storageId = `${threadId}#${postId}-${pageNumber}`;
+            const storageId = postId;
+
+            const playerName =
+                postRow
+                    .querySelector('.player-name')
+                    ?.textContent
+                    .trim() ||
+                `Reply ${postId}`;
+
             const button = document.createElement('button');
 
             button.type = 'button';
             button.className = 'hwctr-spacer-button';
 
             spacer.classList.add('hwctr-spacer');
+
             spacer.dataset.hwctrStorageId = storageId;
             spacer.dataset.hwctrPostId = postId;
+            spacer.dataset.hwctrPlayerName = playerName;
 
             cell.replaceChildren(button);
 
@@ -1251,6 +1296,8 @@ HWUS_getCurrentPlayerId();
                 );
 
                 saveCollapsedReplies();
+                rebuildCollapsedTabs();
+                syncBulkControls();
             });
 
             setCollapsedState(
@@ -1263,19 +1310,163 @@ HWUS_getCurrentPlayerId();
         }
     }
 
+    function initializeBulkControls() {
+        const links = Array.from(
+            document.querySelectorAll('a[href]')
+        );
+
+        const topAnchor = links.find(link =>
+            link.getAttribute('href') === '#bottom' &&
+            link.textContent.trim() === 'Jump to Bottom'
+        );
+
+        const bottomAnchor = links.find(link =>
+            link.getAttribute('href') === '#' &&
+            link.textContent.trim() === 'Jump to Top'
+        );
+
+        if (topAnchor) {
+            addBulkControl(
+                topAnchor,
+                'hwctr-bulk-top'
+            );
+        }
+
+        if (bottomAnchor) {
+            addBulkControl(
+                bottomAnchor,
+                'hwctr-bulk-bottom'
+            );
+        }
+
+        syncBulkControls();
+    }
+
+    function addBulkControl(anchor, id) {
+        if (document.getElementById(id)) return;
+
+        const wrapper = document.createElement('span');
+        const toggle = document.createElement('a');
+
+        wrapper.className = 'hwctr-bulk-wrapper';
+
+        toggle.id = id;
+        toggle.href = '#';
+        toggle.className = 'hwctr-bulk-toggle';
+
+        toggle.addEventListener('click', event => {
+            event.preventDefault();
+
+            const replies = getReplyControls();
+
+            if (!replies.length) return;
+
+            const allCollapsed = replies.every(
+                ({ postRow }) => postRow.hidden
+            );
+
+            const shouldCollapse = !allCollapsed;
+
+            for (const reply of replies) {
+                setCollapsedState(
+                    reply.postRow,
+                    reply.spacer,
+                    reply.button,
+                    reply.storageId,
+                    shouldCollapse
+                );
+            }
+
+            saveCollapsedReplies();
+            rebuildCollapsedTabs();
+            syncBulkControls();
+        });
+
+        /*
+         * Native markup already looks like:
+         *
+         * [Jump to Top]
+         *
+         * We inject immediately after the anchor itself,
+         * before HoboWars' native closing bracket.
+         *
+         * Result:
+         *
+         * [Jump to Top] [Collapse All]
+         */
+        wrapper.append(
+            document.createTextNode('] ['),
+            toggle
+        );
+
+        anchor.insertAdjacentElement(
+            'afterend',
+            wrapper
+        );
+    }
+
+    function getReplyControls() {
+        const replies = [];
+
+        const spacers = document.querySelectorAll(
+            'tr.hwctr-spacer[data-hwctr-storage-id]'
+        );
+
+        for (const spacer of spacers) {
+            const postId = spacer.dataset.hwctrPostId;
+            const storageId =
+                spacer.dataset.hwctrStorageId;
+
+            const postRow = postId
+                ? document.querySelector(
+                    `#tr_post_${CSS.escape(postId)}`
+                )
+                : null;
+
+            const button = spacer.querySelector(
+                '.hwctr-spacer-button'
+            );
+
+            if (
+                !postRow ||
+                !button ||
+                !storageId
+            ) {
+                continue;
+            }
+
+            replies.push({
+                postId,
+                storageId,
+                postRow,
+                spacer,
+                button,
+                playerName:
+                    spacer.dataset.hwctrPlayerName ||
+                    `Reply ${postId}`
+            });
+        }
+
+        return replies;
+    }
+
     function setCollapsedState(
-    postRow,
-     spacer,
-     button,
-     storageId,
-     isCollapsed
+        postRow,
+        spacer,
+        button,
+        storageId,
+        isCollapsed
     ) {
         postRow.hidden = isCollapsed;
-        spacer.classList.toggle('hwctr-collapsed', isCollapsed);
+
+        spacer.classList.toggle(
+            'hwctr-collapsed',
+            isCollapsed
+        );
 
         button.textContent = isCollapsed
             ? 'Collapsed Reply — Click to Expand'
-        : 'Click to Collapse';
+            : 'Click to Collapse';
 
         if (isCollapsed) {
             collapsedReplies.add(storageId);
@@ -1284,14 +1475,182 @@ HWUS_getCurrentPlayerId();
         }
     }
 
+    function rebuildCollapsedTabs() {
+        /*
+         * Remove all previously generated tab strips.
+         */
+        document.querySelectorAll(
+            'tr.hwctr-tab-strip-row'
+        ).forEach(row => row.remove());
+
+        const replies = getReplyControls();
+
+        /*
+         * Restore normal separator visibility first.
+         * A collapsed reply's own spacer disappears because
+         * the generated tab takes its place.
+         */
+        for (const reply of replies) {
+            reply.spacer.hidden = reply.postRow.hidden;
+        }
+
+        if (!replies.length) return;
+
+        /*
+         * A run of collapsed replies attaches to:
+         *
+         * - the topic separator if the run begins at the
+         *   first reply, or
+         *
+         * - the separator belonging to the most recent
+         *   expanded reply.
+         */
+        let anchorRow = getTopicSeparator(replies);
+        let strip = null;
+
+        for (const reply of replies) {
+            if (!reply.postRow.hidden) {
+                anchorRow = reply.spacer;
+                strip = null;
+                continue;
+            }
+
+            if (!anchorRow) continue;
+
+            if (!strip) {
+                strip = createTabStrip(anchorRow);
+            }
+
+            strip.appendChild(
+                createCollapsedTab(reply)
+            );
+        }
+    }
+
+    function getTopicSeparator(replies) {
+        const firstReply = replies[0]?.postRow;
+
+        if (!firstReply) return null;
+
+        /*
+         * On a thread page the topic post's separator row
+         * sits directly before the first reply row.
+         */
+        let row = firstReply.previousElementSibling;
+
+        while (row) {
+            if (
+                row.tagName === 'TR' &&
+                !row.classList.contains(
+                    'hwctr-tab-strip-row'
+                )
+            ) {
+                return row;
+            }
+
+            row = row.previousElementSibling;
+        }
+
+        return null;
+    }
+
+    function createTabStrip(anchorRow) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        const strip = document.createElement('div');
+
+        row.className = 'hwctr-tab-strip-row';
+
+        cell.colSpan = 2;
+        cell.className = 'hwctr-tab-strip-cell';
+
+        strip.className = 'hwctr-tab-strip';
+
+        cell.appendChild(strip);
+        row.appendChild(cell);
+
+        anchorRow.insertAdjacentElement(
+            'afterend',
+            row
+        );
+
+        return strip;
+    }
+
+    function createCollapsedTab(reply) {
+        const tab = document.createElement('button');
+        const label = document.createElement('span');
+
+        tab.type = 'button';
+        tab.className = 'hwctr-reply-tab';
+
+        label.className = 'hwctr-reply-tab-label';
+        label.textContent = reply.playerName;
+
+        tab.appendChild(label);
+
+        tab.title =
+            `Expand reply by ${reply.playerName}`;
+
+        tab.setAttribute(
+            'aria-label',
+            `Expand reply by ${reply.playerName}`
+        );
+
+        tab.addEventListener('click', () => {
+            setCollapsedState(
+                reply.postRow,
+                reply.spacer,
+                reply.button,
+                reply.storageId,
+                false
+            );
+
+            saveCollapsedReplies();
+            rebuildCollapsedTabs();
+            syncBulkControls();
+        });
+
+        return tab;
+    }
+
+    function syncBulkControls() {
+        const replies = getReplyControls();
+
+        const allCollapsed =
+            replies.length > 0 &&
+            replies.every(
+                ({ postRow }) => postRow.hidden
+            );
+
+        const label = allCollapsed
+            ? 'Expand All'
+            : 'Collapse All';
+
+        document.querySelectorAll(
+            '.hwctr-bulk-toggle'
+        ).forEach(toggle => {
+            toggle.textContent = label;
+        });
+    }
+
     function loadCollapsedReplies() {
         try {
-            const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            const stored = JSON.parse(
+                localStorage.getItem(STORAGE_KEY) ||
+                '{}'
+            );
+
+            const pageReplies =
+                stored?.[threadId]?.[pageNumber];
 
             return new Set(
-                Array.isArray(stored)
-                ? stored.filter(value => typeof value === 'string')
-                : []
+                Array.isArray(pageReplies)
+                    ? pageReplies.filter(
+                        value =>
+                            typeof value === 'string'
+                    )
+                    : []
             );
         } catch (error) {
             console.warn(
@@ -1305,9 +1664,43 @@ HWUS_getCurrentPlayerId();
 
     function saveCollapsedReplies() {
         try {
+            const parsed = JSON.parse(
+                localStorage.getItem(STORAGE_KEY) ||
+                '{}'
+            );
+
+            const state =
+                parsed &&
+                typeof parsed === 'object' &&
+                !Array.isArray(parsed)
+                    ? parsed
+                    : {};
+
+            if (!state[threadId]) {
+                state[threadId] = {};
+            }
+
+            const values =
+                Array.from(collapsedReplies);
+
+            if (values.length) {
+                state[threadId][pageNumber] =
+                    values;
+            } else {
+                delete state[threadId][pageNumber];
+
+                if (
+                    Object.keys(
+                        state[threadId]
+                    ).length === 0
+                ) {
+                    delete state[threadId];
+                }
+            }
+
             localStorage.setItem(
                 STORAGE_KEY,
-                JSON.stringify(Array.from(collapsedReplies))
+                JSON.stringify(state)
             );
         } catch (error) {
             console.warn(
@@ -1321,34 +1714,192 @@ HWUS_getCurrentPlayerId();
         const style = document.createElement('style');
 
         style.textContent = `
-        tr.hwctr-spacer td {
-            padding: 0;
-            border-top: 1px solid #333333;
-            border-bottom: 1px solid #333333;
-        }
+            tr.hwctr-spacer td {
+                padding: 0;
+                border-top: 1px solid #333333;
+                border-bottom: 1px solid #333333;
+            }
 
-        .hwctr-spacer-button {
-            display: block;
-            width: 100%;
-            min-height: 22px;
-            padding: 2px 0;
-            border: 0;
-            font: inherit;
-            color: #555555;
-            font-size: 10px;
-            font-weight: bold;
-            text-align: center;
-            cursor: pointer;
-        }
+            .hwctr-spacer-button {
+                display: block;
+                width: 100%;
+                min-height: 22px;
+                padding: 2px 0;
+                border: 0;
+                font: inherit;
+                color: #555555;
+                font-size: 10px;
+                font-weight: bold;
+                text-align: center;
+                cursor: pointer;
+            }
 
-        tr.hwctr-collapsed .hwctr-spacer-button {
-            background-color: #DDBDBD;
-        }
+            /*
+             * This state is normally hidden because collapsed
+             * replies are represented by tabs. Keeping the
+             * styling here makes the underlying state obvious
+             * during DOM inspection and provides a fallback.
+             */
+            tr.hwctr-collapsed .hwctr-spacer-button {
+                background-color: #DDBDBD;
+            }
 
-        tr.hwctr-collapsed .hwctr-spacer-button:hover {
-            background-color: #DD8D8D;
-        }
-    `;
+            tr.hwctr-collapsed .hwctr-spacer-button:hover {
+                background-color: #DD8D8D;
+            }
+
+            .hwctr-bulk-wrapper {
+                display: inline;
+            }
+
+            .hwctr-bulk-toggle {
+                cursor: pointer;
+            }
+
+            /*
+             * One synthetic table row represents an entire
+             * consecutive run of collapsed replies.
+             *
+             * The cell itself has no whitespace, preventing
+             * the old full-height separator effect.
+             */
+            tr.hwctr-tab-strip-row td.hwctr-tab-strip-cell {
+                padding: 0;
+                border: 0;
+            }
+
+            /*
+             * Shared binder rail.
+             *
+             * The background belongs to the entire strip,
+             * rather than to any individual tab. If tabs wrap,
+             * every row therefore remains visually attached to
+             * the same collapsed-reply block.
+             */
+            .hwctr-tab-strip {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: flex-start;
+                align-content: flex-start;
+
+                justify-content: space-between;
+
+                row-gap: 2px;
+
+                padding:
+                    4px
+                    4px
+                    4px;
+
+                border-top:
+                    1px solid #333333;
+
+                border-bottom:
+                    1px solid #777777;
+
+                background-color:
+                    #CDCDCD;
+            }
+
+            /*
+             * Binder-tab shape.
+             *
+             * The tab has a continuous flat top against the
+             * shared rail and angled outer edges. The inner
+             * label supplies the inset face so the tab keeps
+             * its geometry without depending on a top border.
+             */
+            .hwctr-reply-tab {
+                position: relative;
+
+                flex:
+                    0
+                    0
+                    auto;
+
+                min-height:
+                    21px;
+
+                margin:
+                    0;
+
+                padding:
+                    1px;
+
+                border:
+                    0;
+
+                background:
+                    #777777;
+
+            clip-path:
+                polygon(
+                    0 0,
+                    100% 0,
+                    calc(100% - 7px) 100%,
+                    7px 100%
+                );
+
+                font:
+                    inherit;
+
+                font-size:
+                    10px;
+
+                font-weight:
+                    bold;
+
+                color:
+                    #555555;
+
+                cursor:
+                    pointer;
+
+                white-space:
+                    nowrap;
+            }
+
+            .hwctr-reply-tab-label {
+                display:
+                    block;
+
+                min-height:
+                    17px;
+
+                padding:
+                    2px
+                    10px
+                    2px;
+
+                box-sizing:
+                    border-box;
+
+                background:
+                    #DDBDBD;
+
+            clip-path:
+                polygon(
+                    0 0,
+                    100% 0,
+                    calc(100% - 6px) 100%,
+                    6px 100%
+                );
+            }
+
+            .hwctr-reply-tab:hover
+            .hwctr-reply-tab-label {
+                background:
+                    #DD8D8D;
+            }
+
+            .hwctr-reply-tab:focus-visible {
+                outline:
+                    2px solid #333333;
+
+                outline-offset:
+                    1px;
+            }
+        `;
 
         document.head.appendChild(style);
     }
@@ -7876,7 +8427,7 @@ HWUS_getCurrentPlayerId();
 
 // ============================================================================
 // MODULE 12: FIGHT SKILL RECAP
-// Toggles a table of skills in order of use & Cabana Card and Socks failures.
+// Toggles a table of round-numbered skills in order of use & Cabana Card and Socks failures.
 // ============================================================================
 (() => {
     'use strict';
@@ -7961,10 +8512,12 @@ HWUS_getCurrentPlayerId();
             const expected = normalizeSpace(`${actor} uses ${skill}!`);
             if (invocationText !== expected) continue;
 
-            const effectText = readEffectText(font.parentElement);
+            const invocationItalic = font.parentElement;
+            const round = readRoundNumber(invocationItalic);
+            const effectText = readEffectText(invocationItalic);
             const outcome = classifyOutcome(effectText, skill);
 
-            events.push({ actor, skill, outcome, effectText });
+            events.push({ actor, skill, round, outcome, effectText });
 
             if (!actorSet.has(actor)) {
                 actorSet.add(actor);
@@ -7973,6 +8526,32 @@ HWUS_getCurrentPlayerId();
         }
 
         return { actors, events };
+    }
+
+    function readRoundNumber(invocationItalic) {
+        if (!invocationItalic) return null;
+
+        const parts = [];
+        let cursor = invocationItalic.previousSibling;
+
+        while (cursor) {
+            if (
+                cursor.nodeType === Node.ELEMENT_NODE &&
+                cursor.tagName === 'BR'
+            ) {
+                break;
+            }
+
+            parts.unshift(cursor.textContent || '');
+            cursor = cursor.previousSibling;
+        }
+
+        const prefix = normalizeSpace(parts.join(' '));
+        const match = prefix.match(/(?:^|\s)(?:Round\s*)?(\d+)\s*[.:)]?\s*$/i);
+
+        return match
+            ? Number.parseInt(match[1], 10)
+            : null;
     }
 
     function readEffectText(invocationItalic) {
@@ -8068,6 +8647,13 @@ HWUS_getCurrentPlayerId();
     }
 
     function renderEvent(cell, event) {
+        if (Number.isInteger(event.round)) {
+            const round = document.createElement('span');
+            round.className = `${MODULE}-round`;
+            round.textContent = `${event.round}. `;
+            cell.appendChild(round);
+        }
+
         const skill = document.createElement('span');
         skill.className = `${MODULE}-skill`;
         skill.textContent = event.skill;
@@ -9722,14 +10308,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.24',
+    version: '4.26',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'bb3c272f805b6a1eccff8f77d9d831ae41b158d01f2acfdabe119984ef401a97';
+const HWUS_RELEASE_SHA256 = '51ca4b3d6dd17a198a2a23b8e6cc796eb932e045367ee4e71b547f41441e766c';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -9789,7 +10375,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.24 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.26 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
