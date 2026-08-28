@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.27
+// @version      4.28
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -1781,24 +1781,15 @@ HWUS_getCurrentPlayerId();
                 flex-wrap: wrap;
                 align-items: flex-start;
                 align-content: flex-start;
-
                 justify-content: space-between;
-
                 row-gap: 2px;
-
-                padding:
-                    4px
-                    4px
-                    4px;
-
-                border-top:
-                    1px solid #333333;
-
-                border-bottom:
-                    1px solid #777777;
-
-                background-color:
-                    #CDCDCD;
+                padding: 4px 4px 4px;
+                border-top: 1px solid #333333;
+                border-bottom: 1px solid #777777;
+                background-color: #CDCDCD;
+                background-image: linear-gradient(#000, #777);
+                background-position: center 6px;
+                background-size: 100% 25px;
             }
 
             /*
@@ -8630,8 +8621,22 @@ HWUS_getCurrentPlayerId();
     function readRoundNumber(invocationItalic) {
         if (!invocationItalic) return null;
 
-        const parts = [];
         let cursor = invocationItalic.previousSibling;
+
+        // Skill invocations begin on their own line. Step across the
+        // immediately preceding break/whitespace so we can inspect the
+        // numbered combat line directly before the skill-use message.
+        while (
+            cursor &&
+            (
+                (cursor.nodeType === Node.TEXT_NODE && !cursor.textContent.trim()) ||
+                (cursor.nodeType === Node.ELEMENT_NODE && cursor.tagName === 'BR')
+            )
+        ) {
+            cursor = cursor.previousSibling;
+        }
+
+        const parts = [];
 
         while (cursor) {
             if (
@@ -8645,8 +8650,8 @@ HWUS_getCurrentPlayerId();
             cursor = cursor.previousSibling;
         }
 
-        const prefix = normalizeSpace(parts.join(' '));
-        const match = prefix.match(/(?:^|\s)(?:Round\s*)?(\d+)\s*[.:)]?\s*$/i);
+        const line = normalizeSpace(parts.join(' '));
+        const match = line.match(/^(\d+)\s*[.:)]/);
 
         return match
             ? Number.parseInt(match[1], 10)
@@ -10407,14 +10412,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.27',
+    version: '4.28',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '940bb00e2f6fea7d9b8d60d6598e0ae535151fc0bbca82bb045b920395d9d5a9';
+const HWUS_RELEASE_SHA256 = 'a21d7ea8c808933914e203be9878955d8c62ed1101a3585c49700b3db0926ecd';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -10474,7 +10479,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.27 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.28 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
