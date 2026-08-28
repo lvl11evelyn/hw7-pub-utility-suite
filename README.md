@@ -47,7 +47,7 @@ Adds a compact history panel to player profiles that records changes to Respect,
 
 ### 5. Super-Cart Racing
 
-Adds a compact race-history panel to the Pikie interface, grouping Racing Skill gains by date and opponent while maintaining per-group and overall totals. The panel observes and records completed race results as they are displayed and remains independently clearable from the page. Also adds a Hall of Fame racer skill table with variable sorting that updates as the player manually traverses the Hall of Fame according to the contents of each page. In addition, replaces the link to view the currently signed up racers in your class with a state-aware button that opens a small table on the same page or closes it that gives the same information. Hiding and then clicking View again will refresh the table.
+Adds a compact race-history panel to the Pikie interface, grouping Racing Skill gains by date and opponent while maintaining per-group and overall totals. The panel observes and records completed race results as they are displayed and remains independently clearable from the page. Also adds a Hall of Fame racer skill table with variable sorting that updates as the player manually traverses each page. In addition, replaces the link to view the currently signed up racers in your class with a state-aware button that opens a small table on the same page or closes it that gives the same information. Hiding and then clicking View again will refresh the table.
 
 ### 6. Wellness Aid
 
