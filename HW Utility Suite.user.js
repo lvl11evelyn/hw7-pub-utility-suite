@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.29
+// @version      4.30
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -10256,10 +10256,15 @@ HWUS_getCurrentPlayerId();
     const MODULE = 'hw-swim-times';
 
 // ------------------------------------------------------------------------
-// When a shift occurs, update these to the new date/state.
+// Known schedule shifts. The swim sequence is continuous within each segment,
+// with the normal Monday skip, but HoboWars can shift the sequence at a
+// calendar boundary. Preserve each confirmed shift as a dated anchor instead
+// of forcing one anchor to project through every boundary.
 // ------------------------------------------------------------------------
-        const ANCHOR_DATE = '2026-08-26';
-        const ANCHOR_STATE = 2;
+        const SWIM_ANCHORS = [
+            { date: '2026-08-26', state: 2 }, // Aug 26: 10/1
+            { date: '2026-09-01', state: 5 }  // Sep  1: 7
+        ];
 
         const SWIM_STATES = [
             '12/3', //     = 0
@@ -10341,12 +10346,30 @@ HWUS_getCurrentPlayerId();
         }
 
         function getSwimState(targetDate) {
-            const anchorDate = parseDate(ANCHOR_DATE);
+            const anchors = SWIM_ANCHORS
+                .map(anchor => ({
+                    date: parseDate(anchor.date),
+                    state: anchor.state
+                }))
+                .sort((a, b) => a.date - b.date);
 
-            let state = ANCHOR_STATE;
-            let cursor = new Date(anchorDate);
+            // Use the most recent confirmed schedule anchor that is not later
+            // than the target date. This prevents a newly confirmed monthly
+            // shift from corrupting the final days of the preceding month.
+            let anchor = anchors[0];
 
-            if (targetDate > anchorDate) {
+            for (const candidate of anchors) {
+                if (candidate.date <= targetDate) {
+                    anchor = candidate;
+                } else {
+                    break;
+                }
+            }
+
+            let state = anchor.state;
+            let cursor = new Date(anchor.date);
+
+            if (targetDate > anchor.date) {
                 while (cursor < targetDate) {
                     cursor = addDays(cursor, 1);
 
@@ -10418,14 +10441,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.29',
+    version: '4.30',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '085eeba2ae818c8e9fc141af27c6d8168725eb5cde4587c4b903f9ddec403b5d';
+const HWUS_RELEASE_SHA256 = '02bdcde189db3730f3f663160f7f82accf6e5eb8853f4b4300f76783c2afb06d';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -10485,7 +10508,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.29 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.30 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
