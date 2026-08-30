@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.30
+// @version      4.31
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2510,6 +2510,8 @@ HWUS_getCurrentPlayerId();
     const CART_ACTIVE_WEEKLY_GAIN = 1;
     const CART_GLOBAL_UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
     const CART_ADVANCE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+    const CART_SKILL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+    const CART_SKILL_HISTORY_RETENTION_MS = 9 * 24 * 60 * 60 * 1000;
 
     const PIKIE_PANEL_W = 160;
 
@@ -3088,8 +3090,20 @@ HWUS_getCurrentPlayerId();
             return button;
         };
 
+        const previousButton = makeButton(
+            '<< Previous',
+            currentPageNumber - 1,
+            currentPageNumber <= 1
+        );
+
+        const nextButton = makeButton(
+            'Next >>',
+            currentPageNumber + 1,
+            currentPageNumber >= totalPages
+        );
+
         const left = document.createElement('div');
-        left.appendChild(makeButton('<< Previous', currentPageNumber - 1, currentPageNumber <= 1));
+        left.appendChild(previousButton);
 
         const center = document.createElement('div');
         center.appendChild(makeButton(
@@ -3099,7 +3113,38 @@ HWUS_getCurrentPlayerId();
         ));
 
         const right = document.createElement('div');
-        right.appendChild(makeButton('Next >>', currentPageNumber + 1, currentPageNumber >= totalPages));
+        right.appendChild(nextButton);
+
+        document.addEventListener('keydown', event => {
+            if (
+                event.defaultPrevented ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey
+            ) {
+                return;
+            }
+
+            const target = event.target;
+            if (
+                target instanceof HTMLElement &&
+                (
+                    target.isContentEditable ||
+                    target.closest('input, textarea, select, button, [contenteditable="true"]')
+                )
+            ) {
+                return;
+            }
+
+            if (event.key === 'ArrowLeft' && !previousButton.disabled) {
+                event.preventDefault();
+                previousButton.click();
+            } else if (event.key === 'ArrowRight' && !nextButton.disabled) {
+                event.preventDefault();
+                nextButton.click();
+            }
+        });
 
         nav.append(left, center, right);
         nativeTable.insertAdjacentElement('afterend', nav);
@@ -3219,29 +3264,7 @@ HWUS_getCurrentPlayerId();
         GM_setValue(K_CART_META, JSON.stringify(meta || {}));
     }
 
-    function getCurrentWeekStart() {
-        const now = new Date();
-        const parts = new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Australia/Brisbane',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            weekday: 'short'
-        }).formatToParts(now);
-
-        const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-        const date = new Date(Date.UTC(
-            Number(values.year),
-            Number(values.month) - 1,
-            Number(values.day)
-        ));
-        const day = date.getUTCDay();
-        const diff = day === 0 ? -6 : 1 - day;
-        date.setUTCDate(date.getUTCDate() + diff);
-        return date.getTime();
-    }
-
-    function loadCartClassAdvances() {
+        function loadCartClassAdvances() {
         try {
             const raw = GM_getValue(K_CART_ADVANCES, '[]');
             const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -3331,9 +3354,98 @@ HWUS_getCurrentPlayerId();
         }
     }
 
+    function pruneCartSkillHistory(history, now = Date.now()) {
+        const cutoff = now - CART_SKILL_HISTORY_RETENTION_MS;
+        const seen = new Set();
+
+        return (Array.isArray(history) ? history : [])
+            .map(sample => {
+                if (Array.isArray(sample)) {
+                    return [Number(sample[0]), Number(sample[1])];
+                }
+
+                if (sample && typeof sample === 'object') {
+                    return [
+                        Number(sample.at ?? sample.timestamp),
+                        Number(sample.skill)
+                    ];
+                }
+
+                return null;
+            })
+            .filter(sample =>
+                sample &&
+                Number.isFinite(sample[0]) &&
+                Number.isFinite(sample[1]) &&
+                sample[0] >= cutoff &&
+                sample[0] <= now
+            )
+            .sort((a, b) => a[0] - b[0])
+            .filter(sample => {
+                const key = `${sample[0]}|${sample[1]}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }
+
+    function normalizeCartSkillHistory(entry, now = Date.now()) {
+        const history = Array.isArray(entry?.skillHistory)
+            ? [...entry.skillHistory]
+            : [];
+
+        /*
+         * One-time migration from the v4.30 manifest. These are real stored
+         * observations, not fabricated history.
+         */
+        const legacySamples = [
+            [Number(entry?.firstSeenAt), Number(entry?.firstSkill)],
+            [Number(entry?.weekStartAt), Number(entry?.weekStartSkill)],
+            [Number(entry?.lastSeenAt), Number(entry?.lastSkill)]
+        ];
+
+        for (const sample of legacySamples) {
+            if (Number.isFinite(sample[0]) && Number.isFinite(sample[1])) {
+                history.push(sample);
+            }
+        }
+
+        return pruneCartSkillHistory(history, now);
+    }
+
+    function getCartRollingBaseline(history, now = Date.now()) {
+        if (!Array.isArray(history) || !history.length) return null;
+
+        const cutoff = now - CART_SKILL_WINDOW_MS;
+        let best = null;
+        let bestDistance = Infinity;
+
+        for (const sample of history) {
+            const at = Number(sample?.[0]);
+            const skill = Number(sample?.[1]);
+            if (!Number.isFinite(at) || !Number.isFinite(skill)) continue;
+
+            const distance = Math.abs(at - cutoff);
+
+            if (
+                distance < bestDistance ||
+                (
+                    distance === bestDistance &&
+                    best &&
+                    at <= cutoff &&
+                    best[0] > cutoff
+                )
+            ) {
+                best = [at, skill];
+                bestDistance = distance;
+            }
+        }
+
+        return best;
+    }
+
     function persistCartPage(pageNumber, rows, observedAt) {
         const manifest = loadCartManifest();
-        const currentWeekStart = getCurrentWeekStart();
         const hasEstablishedBaseline = Number(loadCartMeta().lastGlobalUpdateAt) > 0;
 
         for (const row of rows) {
@@ -3352,21 +3464,15 @@ HWUS_getCurrentPlayerId();
                     firstSkill: row.skill,
                     lastSeenAt: observedAt,
                     lastSkill: row.skill,
-                    weekStartAt: currentWeekStart,
-                    weekStartSkill: row.skill
+                    skillHistory: [[observedAt, row.skill]]
                 };
                 continue;
             }
 
             recordCartClassAdvance(prior, row, observedAt);
 
-            const weekStartAt = Number(prior.weekStartAt) || 0;
-            let weekStartSkill = Number(prior.weekStartSkill);
-
-            if (weekStartAt < currentWeekStart || !Number.isFinite(weekStartSkill)) {
-                weekStartSkill = Number(prior.lastSkill);
-                if (!Number.isFinite(weekStartSkill)) weekStartSkill = row.skill;
-            }
+            const skillHistory = normalizeCartSkillHistory(prior, observedAt);
+            skillHistory.push([observedAt, row.skill]);
 
             manifest[row.id] = {
                 ...prior,
@@ -3379,9 +3485,11 @@ HWUS_getCurrentPlayerId();
                     : row.skill,
                 lastSeenAt: observedAt,
                 lastSkill: row.skill,
-                weekStartAt: currentWeekStart,
-                weekStartSkill
+                skillHistory: pruneCartSkillHistory(skillHistory, observedAt)
             };
+
+            delete manifest[row.id].weekStartAt;
+            delete manifest[row.id].weekStartSkill;
         }
 
         saveCartManifest(manifest);
@@ -3877,10 +3985,28 @@ HWUS_getCurrentPlayerId();
     }
 
     function buildCartData(manifest) {
+        const now = Date.now();
+
         return Object.entries(manifest).map(([id, d]) => {
             const skill = Number(d.lastSkill);
             const firstSkill = Number(d.firstSkill);
-            const weekStartSkill = Number(d.weekStartSkill);
+            const history = normalizeCartSkillHistory(d, now);
+
+            const lastSeenAt = Number(d.lastSeenAt) || 0;
+            if (
+                Number.isFinite(skill) &&
+                lastSeenAt > 0 &&
+                !history.some(sample =>
+                    Number(sample?.[0]) === lastSeenAt &&
+                    Number(sample?.[1]) === skill
+                )
+            ) {
+                history.push([lastSeenAt, skill]);
+            }
+
+            const recentHistory = pruneCartSkillHistory(history, now);
+            const baseline = getCartRollingBaseline(recentHistory, now);
+            const rollingStartSkill = Number(baseline?.[1]);
 
             return {
                 id,
@@ -3890,11 +4016,11 @@ HWUS_getCurrentPlayerId();
                 gained: Number.isFinite(skill) && Number.isFinite(firstSkill)
                     ? skill - firstSkill
                     : 0,
-                wgained: Number.isFinite(skill) && Number.isFinite(weekStartSkill)
-                    ? skill - weekStartSkill
+                wgained: Number.isFinite(skill) && Number.isFinite(rollingStartSkill)
+                    ? skill - rollingStartSkill
                     : 0,
                 firstSeenAt: Number(d.firstSeenAt) || 0,
-                lastSeenAt: Number(d.lastSeenAt) || 0
+                lastSeenAt
             };
         });
     }
@@ -10038,6 +10164,9 @@ HWUS_getCurrentPlayerId();
         const journalTable = findProfileJournalTable();
         if (!journalTable || document.getElementById('hw-fight-record-profile')) return false;
 
+        const profileCell = journalTable.parentElement;
+        if (!profileCell?.matches('td[width="50%"]')) return false;
+
         const decisions = wins + losses;
         const winRate = decisions
             ? `${((wins / decisions) * 100).toFixed(2)}%`
@@ -10047,13 +10176,14 @@ HWUS_getCurrentPlayerId();
         box.id = 'hw-fight-record-profile';
         box.style.cssText = [
             'width:98%',
-            'margin:8px auto 0',
+            'margin:0 auto',
             'box-sizing:border-box',
             'border:1px solid #aaa',
             'background:#f3f3f3',
             'color:#000',
             'font:12px Arial,sans-serif',
-            'line-height:1.45'
+            'line-height:1.45',
+            'flex:0 0 auto'
         ].join(';');
 
         const heading = document.createElement('div');
@@ -10068,7 +10198,33 @@ HWUS_getCurrentPlayerId();
         const latestLine = buildProfileLatestFightLine(record);
         if (latestLine) box.appendChild(latestLine);
 
-        journalTable.insertAdjacentElement('afterend', box);
+        /*
+         * Preserve the right-hand profile cell's table-calculated dimensions,
+         * then make that exact cell the two-item vertical flex container.
+         */
+        const rect = profileCell.getBoundingClientRect();
+        const nativeBlock = document.createElement('div');
+        nativeBlock.id = 'hwus-profile-native-block';
+        nativeBlock.style.cssText = 'width:100%;box-sizing:border-box';
+
+        while (profileCell.firstChild) {
+            nativeBlock.appendChild(profileCell.firstChild);
+        }
+
+        profileCell.style.cssText += [
+            'display:flex',
+            'flex-direction:column',
+            'justify-content:space-between',
+            'align-items:stretch',
+            'box-sizing:border-box',
+            `width:${rect.width}px`,
+            `min-width:${rect.width}px`,
+            `max-width:${rect.width}px`,
+            `height:${rect.height}px`,
+            `min-height:${rect.height}px`
+        ].join(';') + ';';
+
+        profileCell.append(nativeBlock, box);
         return true;
     }
 
@@ -10441,14 +10597,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.30',
+    version: '4.31',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '02bdcde189db3730f3f663160f7f82accf6e5eb8853f4b4300f76783c2afb06d';
+const HWUS_RELEASE_SHA256 = 'def25b2c84527f28d12bbb2367f49123e6f95794f18264ee473d013721beaf94';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
