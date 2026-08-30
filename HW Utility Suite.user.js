@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.31
+// @version      4.32
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2746,8 +2746,8 @@ HWUS_getCurrentPlayerId();
                         const table = document.createElement('table');
                         table.align = 'center';
                         table.width = '100%';
-                        table.cellSpacing = '2';
-                        table.cellPadding = '4';
+                        table.cellSpacing = '1';
+                        table.cellPadding = '2';
 
                         const tbody = document.createElement('tbody');
                         tbody.innerHTML = `
@@ -10597,14 +10597,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.31',
+    version: '4.32',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'def25b2c84527f28d12bbb2367f49123e6f95794f18264ee473d013721beaf94';
+const HWUS_RELEASE_SHA256 = 'fb4634275c5128a78fc9a2e35fe4a8363144e5aa472a39b30d5c489bf9aa0f26';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
