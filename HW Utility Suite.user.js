@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.32
+// @version      4.33
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2959,8 +2959,8 @@ HWUS_getCurrentPlayerId();
             summaryDiv,
             controlsDiv,
             skillToggle,
-            paginationDiv,
             dataTable,
+            paginationDiv,
             advancesToggle,
             advancesWrap
         );
@@ -3014,7 +3014,6 @@ HWUS_getCurrentPlayerId();
             }
 
             skillToggle.textContent = state.skillGainsOpen ? 'Hide Skill Gains' : 'Show Skill Gains';
-            paginationDiv.style.display = state.skillGainsOpen ? 'block' : 'none';
             dataTable.style.display = state.skillGainsOpen ? 'table' : 'none';
 
             if (state.skillGainsOpen) {
@@ -3024,6 +3023,7 @@ HWUS_getCurrentPlayerId();
                     renderAll();
                 });
             } else {
+                paginationDiv.style.display = 'none';
                 paginationDiv.replaceChildren();
                 dataTable.replaceChildren();
             }
@@ -3815,6 +3815,9 @@ HWUS_getCurrentPlayerId();
     function renderCartSkillTable(table, pagination, manifest, state, onChange) {
         const data = sortCartData(buildCartData(manifest), state);
         const pageCount = Math.max(1, Math.ceil(data.length / CART_ITEMS_PER_PAGE));
+        pagination.style.display = state.skillGainsOpen && pageCount > 1
+            ? 'block'
+            : 'none';
         const page = Math.min(Math.max(1, state.page), pageCount);
         const start = (page - 1) * CART_ITEMS_PER_PAGE;
         const pageRows = data.slice(start, start + CART_ITEMS_PER_PAGE);
@@ -10597,14 +10600,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.32',
+    version: '4.33',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'fb4634275c5128a78fc9a2e35fe4a8363144e5aa472a39b30d5c489bf9aa0f26';
+const HWUS_RELEASE_SHA256 = 'e84a16c1fbdd94597a0982a5eca7e9e6de026a1abeb631c17fd48f3cfaa392cb';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
