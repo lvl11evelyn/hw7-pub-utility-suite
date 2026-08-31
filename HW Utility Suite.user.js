@@ -10634,7 +10634,7 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = 'e84a16c1fbdd94597a0982a5eca7e9e6de026a1abeb631c17fd48f3cfaa392cb';
+const HWUS_RELEASE_SHA256 = '8a3ac934c31da6b8d50e62ce99427f953dca31dfbab7563914d0a41ff8563688';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
