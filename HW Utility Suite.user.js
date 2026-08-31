@@ -1178,10 +1178,37 @@ HWUS_getCurrentPlayerId();
 
     const collapsedReplies = loadCollapsedReplies();
 
+    normalizePagination();
     injectStyles();
     initializeReplies();
     rebuildCollapsedTabs();
     initializeBulkControls();
+
+    function normalizePagination() {
+        const links = document.querySelectorAll(
+            'a[href*="cmd=gathering"][href*="do=vpost"][href*="post="][href*="board="][href*="limit1="][href*="limit2="]'
+        );
+
+        for (const link of links) {
+            let node = link;
+
+            while (
+                node.parentElement &&
+                /^(B|FONT)$/i.test(node.parentElement.tagName)
+            ) {
+                node = node.parentElement;
+            }
+
+            const separator = node.nextSibling;
+
+            if (
+                separator?.nodeType === Node.TEXT_NODE &&
+                /^,\s*/.test(separator.nodeValue)
+            ) {
+                separator.nodeValue = separator.nodeValue.replace(/^,\s*/, ' ');
+            }
+        }
+    }
 
     function isThreadPage() {
         const params = new URLSearchParams(window.location.search);
