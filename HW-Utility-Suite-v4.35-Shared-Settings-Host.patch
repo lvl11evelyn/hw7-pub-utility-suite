@@ -1,0 +1,409 @@
+diff --git a/HW Utility Suite.user.js b/HW Utility Suite.user.js
+--- a/HW Utility Suite.user.js
++++ b/HW Utility Suite.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         HW Utility Suite
+ // @namespace    https://www.hobowars.com/
+-// @version      4.34
++// @version      4.35
+ // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
+ // @author       lvl11evelyn HW1(2924238)
+ // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
+@@ -9808,6 +9808,260 @@ function HWUS_officialBuild() {
+     })();
+ }
++
++// ============================================================================
++// SHARED PREFERENCES SETTINGS HOST
++// Cooperative DOM contract for HW1 userscripts that place settings panels on
++// the top-level HoboWars Preferences landing page.
++//
++// Providers register by placing a panel in .content-area with:
++//   data-hw-settings-provider="stable-id"
++//   data-hw-settings-label="Short Tab Label"
++//   data-hw-settings-order="numeric sort weight"
++//
++// The rail is omitted while only one provider exists. When two or more are
++// present, all provider panels share one host and the active panel is selected
++// by normalized vertical tabs attached to the host's right edge.
++// ============================================================================
++(function HWUS_installSharedSettingsHost() {
++    'use strict';
++
++    const url = new URL(location.href);
++    if (!url.pathname.endsWith('/game/game.php')) return;
++    if (url.searchParams.get('cmd') !== 'preferences') return;
++
++    const allowedKeys = new Set(['sr', 'cmd']);
++    if ([...url.searchParams.keys()].some(key => !allowedKeys.has(key))) return;
++
++    const content = document.querySelector('.content-area');
++    if (!content) return;
++
++    const HOST_ID = 'hw-shared-settings-host';
++    const RAIL_ID = 'hw-shared-settings-tabs';
++    const STYLE_ID = 'hw-shared-settings-styles';
++    const ACTIVE_KEY = 'hwSharedSettings.activeProvider.v1';
++    const PROVIDER_READY_EVENT = 'hw:settings-provider-ready';
++    const PROVIDER_CHANGE_EVENT = 'hw:settings-provider-change';
++
++    const UTILITIES = Object.freeze({
++        id: 'utilities',
++        label: 'Utilities',
++        order: 10,
++        panelId: 'hwus-preferences-panel'
++    });
++
++    let syncFrame = 0;
++    let observer = null;
++
++    installStyles();
++    markUtilitiesPanelWhenReady();
++    installProviderObserver();
++    installGeometryObserver();
++    document.addEventListener(PROVIDER_READY_EVENT, scheduleSync, true);
++    document.addEventListener(PROVIDER_CHANGE_EVENT, scheduleSync, true);
++    scheduleSync();
++
++    function installStyles() {
++        if (document.getElementById(STYLE_ID)) return;
++
++        const style = document.createElement('style');
++        style.id = STYLE_ID;
++        style.textContent = `
++            #${HOST_ID} {
++                position: relative;
++                float: right;
++                width: min(440px, 48%);
++                margin: 0 0 18px 12px;
++                box-sizing: border-box;
++                overflow: visible;
++            }
++
++            #${HOST_ID}.hw-settings-host-stacked {
++                float: none;
++                width: auto;
++                margin: 0 0 16px;
++            }
++
++            #${HOST_ID} > [data-hw-settings-provider] {
++                float: none !important;
++                width: 100% !important;
++                margin: 0 !important;
++            }
++
++            #${HOST_ID} > [data-hw-settings-provider][hidden] {
++                display: none !important;
++            }
++
++            #${RAIL_ID} {
++                position: absolute;
++                left: 100%;
++                top: 16px;
++                z-index: 2;
++                display: flex;
++                flex-direction: column;
++                align-items: stretch;
++                margin: 0;
++                padding: 0;
++            }
++
++            #${RAIL_ID}[hidden] {
++                display: none !important;
++            }
++
++            #${RAIL_ID} .hw-settings-tab {
++                box-sizing: border-box;
++                width: 40px;
++                height: 142px;
++                margin: 0;
++                padding: 7px 0;
++                border: 1px solid #c7c7c7;
++                border-left: 0;
++                border-radius: 0 14px 14px 0;
++                background: #d6d6d6;
++                color: #000000;
++                font: normal 13px Arial, sans-serif;
++                line-height: 1;
++                text-decoration: underline;
++                cursor: pointer;
++                display: flex;
++                align-items: center;
++                justify-content: center;
++            }
++
++            #${RAIL_ID} .hw-settings-tab + .hw-settings-tab {
++                margin-top: 5px;
++            }
++
++            #${RAIL_ID} .hw-settings-tab-label {
++                writing-mode: vertical-rl;
++                transform: rotate(180deg);
++                white-space: nowrap;
++                pointer-events: none;
++            }
++
++            #${RAIL_ID} .hw-settings-tab:not(.is-active):hover,
++            #${RAIL_ID} .hw-settings-tab:not(.is-active):focus-visible {
++                background: #f4fff8;
++                color: #000000;
++                font-weight: bold;
++                outline: none;
++            }
++
++            #${RAIL_ID} .hw-settings-tab.is-active,
++            #${RAIL_ID} .hw-settings-tab.is-active:hover,
++            #${RAIL_ID} .hw-settings-tab.is-active:focus-visible {
++                background: #f3f3f3;
++                color: #000000;
++                font-weight: bold;
++                text-decoration: none;
++                cursor: default;
++                border-right-color: #f3f3f3;
++                outline: none;
++            }
++        `;
++
++        document.head.appendChild(style);
++    }
++
++    function markUtilitiesPanelWhenReady() {
++        const mark = () => {
++            const panel = document.getElementById(UTILITIES.panelId);
++            if (!panel) return false;
++
++            panel.dataset.hwSettingsProvider = UTILITIES.id;
++            panel.dataset.hwSettingsLabel = UTILITIES.label;
++            panel.dataset.hwSettingsOrder = String(UTILITIES.order);
++            scheduleSync();
++            return true;
++        };
++
++        if (mark()) return;
++
++        const utilityObserver = new MutationObserver(() => {
++            if (!mark()) return;
++            utilityObserver.disconnect();
++        });
++
++        utilityObserver.observe(content, { childList: true, subtree: true });
++    }
++
++    function installProviderObserver() {
++        if (observer) return;
++
++        observer = new MutationObserver(mutations => {
++            const providerChanged = mutations.some(mutation => {
++                if (mutation.type === 'attributes') {
++                    return mutation.target?.matches?.('[data-hw-settings-provider]');
++                }
++
++                if (mutation.type !== 'childList') return false;
++
++                return [...mutation.addedNodes, ...mutation.removedNodes].some(node => {
++                    if (node.nodeType !== Node.ELEMENT_NODE) return false;
++                    if (node.matches?.('[data-hw-settings-provider]')) return true;
++                    return Boolean(node.querySelector?.('[data-hw-settings-provider]'));
++                });
++            });
++
++            if (providerChanged) scheduleSync();
++        });
++
++        observer.observe(content, {
++            childList: true,
++            subtree: true,
++            attributes: true,
++            attributeFilter: [
++                'data-hw-settings-provider',
++                'data-hw-settings-label',
++                'data-hw-settings-order'
++            ]
++        });
++    }
++
++    function installGeometryObserver() {
++        if (typeof ResizeObserver === 'function') {
++            const resizeObserver = new ResizeObserver(scheduleSync);
++            resizeObserver.observe(content);
++            return;
++        }
++
++        window.addEventListener('resize', scheduleSync, { passive: true });
++    }
++
++    function scheduleSync() {
++        if (syncFrame) cancelAnimationFrame(syncFrame);
++        syncFrame = requestAnimationFrame(syncHost);
++    }
++
++    function getProviders() {
++        const providers = [...content.querySelectorAll('[data-hw-settings-provider]')]
++            .filter(panel => panel instanceof HTMLElement)
++            .map(panel => ({
++                panel,
++                id: String(panel.dataset.hwSettingsProvider || '').trim(),
++                label: String(panel.dataset.hwSettingsLabel || '').trim(),
++                order: Number(panel.dataset.hwSettingsOrder)
++            }))
++            .filter(provider => provider.id && provider.label);
++
++        const unique = new Map();
++
++        for (const provider of providers) {
++            if (!unique.has(provider.id)) unique.set(provider.id, provider);
++        }
++
++        return [...unique.values()].sort((a, b) => {
++            const orderA = Number.isFinite(a.order) ? a.order : 9999;
++            const orderB = Number.isFinite(b.order) ? b.order : 9999;
++            return orderA - orderB || a.label.localeCompare(b.label);
++        });
++    }
++
++    function syncHost() {
++        syncFrame = 0;
++
++        const providers = getProviders();
++        const existingHost = document.getElementById(HOST_ID);
++
++        if (providers.length < 2) {
++            dissolveHost(existingHost, providers[0]?.panel || null);
++            return;
++        }
++
++        const host = existingHost || createHost(providers[0].panel);
++        const rail = ensureRail(host);
++
++        for (const provider of providers) {
++            if (provider.panel.parentElement !== host) {
++                host.insertBefore(provider.panel, rail);
++            }
++        }
++
++        const knownIds = new Set(providers.map(provider => provider.id));
++        let activeId = readActiveProvider();
++
++        if (!knownIds.has(activeId)) {
++            activeId = providers[0].id;
++        }
++
++        writeActiveProvider(activeId);
++        renderRail(rail, providers, activeId);
++
++        for (const provider of providers) {
++            provider.panel.hidden = provider.id !== activeId;
++        }
++
++        rail.hidden = false;
++        syncHostGeometry(host);
++    }
++
++    function createHost(referencePanel) {
++        const host = document.createElement('div');
++        host.id = HOST_ID;
++
++        referencePanel.parentNode.insertBefore(host, referencePanel);
++        return host;
++    }
++
++    function ensureRail(host) {
++        let rail = host.querySelector(`:scope > #${RAIL_ID}`);
++
++        if (!rail) {
++            rail = document.createElement('div');
++            rail.id = RAIL_ID;
++            rail.setAttribute('role', 'tablist');
++            rail.setAttribute('aria-label', 'HoboWars script settings');
++            host.appendChild(rail);
++        }
++
++        return rail;
++    }
++
++    function renderRail(rail, providers, activeId) {
++        rail.replaceChildren();
++
++        for (const provider of providers) {
++            const active = provider.id === activeId;
++            const tab = document.createElement('button');
++            tab.type = 'button';
++            tab.className = `hw-settings-tab${active ? ' is-active' : ''}`;
++            tab.dataset.hwSettingsTarget = provider.id;
++            tab.setAttribute('role', 'tab');
++            tab.setAttribute('aria-selected', String(active));
++            tab.tabIndex = active ? -1 : 0;
++
++            const label = document.createElement('span');
++            label.className = 'hw-settings-tab-label';
++            label.textContent = provider.label;
++            tab.appendChild(label);
++
++            if (!active) {
++                tab.addEventListener('click', () => {
++                    writeActiveProvider(provider.id);
++                    scheduleSync();
++                });
++            }
++
++            rail.appendChild(tab);
++        }
++    }
++
++    function dissolveHost(host, solePanel) {
++        if (!host) return;
++
++        const parent = host.parentNode;
++        const providerPanels = [...host.querySelectorAll(':scope > [data-hw-settings-provider]')];
++
++        for (const panel of providerPanels) {
++            panel.hidden = false;
++            parent.insertBefore(panel, host);
++        }
++
++        host.remove();
++
++        if (solePanel) solePanel.hidden = false;
++    }
++
++    function syncHostGeometry(host) {
++        const contentWidth = content.getBoundingClientRect().width;
++        host.classList.toggle('hw-settings-host-stacked', contentWidth < 700);
++    }
++
++    function readActiveProvider() {
++        try {
++            return String(localStorage.getItem(ACTIVE_KEY) || '');
++        } catch {
++            return '';
++        }
++    }
++
++    function writeActiveProvider(id) {
++        try {
++            localStorage.setItem(ACTIVE_KEY, String(id || ''));
++        } catch {
++            // Host operation does not depend on persistence being available.
++        }
++    }
++})();
+ 
+ // ============================================================================
+ // OFFICIAL RELEASE INTEGRITY GATE
+@@ -9817,7 +10071,7 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
+     author: 'lvl11evelyn HW1(2924238)',
+     name: 'HW Utility Suite',
+     namespace: 'https://www.hobowars.com/',
+-    version: '4.34',
++    version: '4.35',
+     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
+     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
+     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
+@@ -9877,7 +10131,7 @@ function HWUS_renderIntegrityFailure() {
+     const message = document.createElement('p');
+     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
+     message.textContent =
+-        'This installation still identifies itself as an HW Utility Suite v4.34 release, ' +
++        'This installation still identifies itself as an HW Utility Suite v4.35 release, ' +
+         'but its executable logic no longer matches the published build. Suite execution has been halted.';
