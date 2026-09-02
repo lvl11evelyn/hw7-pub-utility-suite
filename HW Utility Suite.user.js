@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.37
+// @version      4.38
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2472,6 +2472,24 @@ HWUS_getCurrentPlayerId();
 
         let settingsPopover = null;
 
+        const positionSettings = () => {
+            if (!settingsPopover) return;
+
+            const buttonRect = settingsButton.getBoundingClientRect();
+            const pageLeft = window.scrollX || window.pageXOffset || 0;
+            const pageTop = window.scrollY || window.pageYOffset || 0;
+            const viewportRight = pageLeft + document.documentElement.clientWidth;
+            const popoverWidth = settingsPopover.offsetWidth;
+            const rightSideLeft = pageLeft + buttonRect.right + 4;
+            const leftSideFallback = pageLeft + buttonRect.left - popoverWidth - 4;
+            const opensRight = rightSideLeft + popoverWidth <= viewportRight - 4;
+
+            settingsPopover.style.left = `${opensRight
+                ? rightSideLeft
+                : Math.max(pageLeft + 4, leftSideFallback)}px`;
+            settingsPopover.style.top = `${pageTop + buttonRect.top}px`;
+        };
+
         const closeSettings = () => {
             settingsPopover?.remove();
             settingsPopover = null;
@@ -2495,9 +2513,12 @@ HWUS_getCurrentPlayerId();
                 requestAnimationFrame(syncValueRows);
             });
 
-            heading.append(settingsPopover);
+            document.body.append(settingsPopover);
+            positionSettings();
             settingsButton.setAttribute('aria-expanded', 'true');
         });
+
+        window.addEventListener('resize', positionSettings, { passive: true });
 
         document.addEventListener('mousedown', event => {
             if (!settingsPopover) return;
@@ -3020,9 +3041,7 @@ HWUS_getCurrentPlayerId();
 
             .${MODULE}-settings-popover {
                 position: absolute;
-                top: calc(100% + 2px);
-                right: 0;
-                z-index: 4;
+                z-index: 10000;
                 min-width: 154px;
                 padding: 5px 7px 6px;
                 box-sizing: border-box;
@@ -3031,6 +3050,7 @@ HWUS_getCurrentPlayerId();
                 background: #f7f7f7;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
                 color: #222;
+                font: 10px/11px Tahoma, Arial, sans-serif;
                 font-weight: normal;
             }
 
