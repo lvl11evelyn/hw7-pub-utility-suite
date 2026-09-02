@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.34
+// @version      4.35
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -15,6 +15,264 @@
 // @grant        GM_setValue
 // @grant        GM_info
 // ==/UserScript==
+
+/*
+ * Shared HoboWars settings-provider coordinator.
+ *
+ * Every participating userscript carries this small coordinator. Providers
+ * communicate only through same-origin DOM markers/events and localStorage;
+ * no userscript sandbox needs a reference to another script's functions.
+ */
+function HW_registerSharedSettingsProvider(panel, provider) {
+    'use strict';
+
+    if (!(panel instanceof HTMLElement) || !provider) return;
+
+    const ACTIVE_KEY = 'hw.sharedSettings.activeProvider.v1';
+    const REGISTER_EVENT = 'hw:settings-provider-registered';
+    const COORDINATOR_ATTR = 'data-hw-settings-coordinator';
+    const PROVIDER_SELECTOR = '[data-hw-settings-provider]';
+    const TAB_WIDTH = 25;
+
+    panel.dataset.hwSettingsProvider = String(provider.id || '');
+    panel.dataset.hwSettingsLabel = String(provider.label || provider.id || '');
+    panel.dataset.hwSettingsOrder = String(Number(provider.order) || 999);
+    panel.hidden = false;
+
+    if (!document.getElementById('hw-shared-settings-styles')) {
+        const style = document.createElement('style');
+        style.id = 'hw-shared-settings-styles';
+        style.textContent = `
+            .hw-settings-shared-shell {
+                --hw-settings-tab-width: ${TAB_WIDTH}px;
+                position: relative;
+                float: right;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) var(--hw-settings-tab-width);
+                align-items: start;
+                width: 472px;
+                max-width: calc(100% - 307px);
+                margin: 0 0 18px 5px;
+                box-sizing: border-box;
+                color: #111;
+                font-family: Arial, sans-serif;
+                font-size: 13px;
+            }
+            .hw-settings-shared-shell::after {
+                content: '';
+                position: absolute;
+                z-index: 2;
+                top: 0;
+                right: calc(var(--hw-settings-tab-width) - 1px);
+                bottom: 0;
+                width: 1px;
+                background: #c9c9c9;
+                pointer-events: none;
+            }
+            .hw-settings-shared-body {
+                position: relative;
+                z-index: 1;
+                min-width: 0;
+            }
+            .hw-settings-shared-body > [data-hw-settings-provider] {
+                float: none !important;
+                width: 100% !important;
+                max-width: none !important;
+                margin: 0 !important;
+                box-sizing: border-box !important;
+                border-radius: 5px 0 5px 5px !important;
+            }
+            .hw-settings-shared-body > [data-hw-settings-provider][hidden] {
+                display: none !important;
+            }
+            .hw-settings-shared-tabs {
+                position: relative;
+                z-index: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                min-width: 0;
+                gap: 5px;
+                padding-top: 16px;
+            }
+            .hw-settings-tab {
+                position: relative;
+                z-index: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 100px;
+                min-height: 100px;
+                margin: 0;
+                padding: 7px 5px;
+                box-sizing: border-box;
+                border: 1px solid #7f7f7f;
+                border-radius: 0 10px 10px 0;
+                background: #c3c3c3;
+                color: #111;
+                font: inherit;
+                text-align: center;
+                text-decoration: underline;
+                writing-mode: vertical-rl;
+                text-orientation: mixed;
+                cursor: pointer;
+            }
+            .hw-settings-tab:not(.hw-settings-tab-active):hover {
+                border-color: #007a2d;
+                background: #f4fff8;
+            }
+            .hw-settings-tab.hw-settings-tab-active {
+                z-index: 3;
+                border: 1px solid #c9c9c9;
+                border-left-color: #f3f3f3;
+                background: #f3f3f3;
+                font-weight: bold;
+                text-decoration: none;
+                cursor: default;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    const readProviders = () => {
+        const seen = new Set();
+        return [...document.querySelectorAll(PROVIDER_SELECTOR)]
+            .filter(node => {
+                const id = node.dataset.hwSettingsProvider || '';
+                if (!id || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            })
+            .sort((a, b) => {
+                const orderDelta =
+                    (Number(a.dataset.hwSettingsOrder) || 999) -
+                    (Number(b.dataset.hwSettingsOrder) || 999);
+                return orderDelta ||
+                    (a.dataset.hwSettingsProvider || '').localeCompare(
+                        b.dataset.hwSettingsProvider || ''
+                    );
+            });
+    };
+
+    const syncShellGeometry = shell => {
+        if (!shell) return;
+        shell.classList.remove('hw-settings-shared-stacked');
+    };
+
+    const coordinate = () => {
+        const providers = readProviders();
+        let shell = document.querySelector('.hw-settings-shared-shell');
+
+        if (providers.length < 2) {
+            if (shell) {
+                const parent = shell.parentNode;
+                const reference = shell;
+                for (const providerPanel of providers) {
+                    parent?.insertBefore(providerPanel, reference);
+                    providerPanel.hidden = false;
+                    providerPanel.style.removeProperty('display');
+                }
+                shell.remove();
+            } else if (providers[0]) {
+                providers[0].hidden = false;
+                providers[0].style.removeProperty('display');
+            }
+            return;
+        }
+
+        if (!shell) {
+            const anchor = providers[0];
+            shell = document.createElement('section');
+            shell.className = 'hw-settings-shared-shell';
+            shell.setAttribute('aria-label', 'HoboWars settings');
+
+            const body = document.createElement('div');
+            body.className = 'hw-settings-shared-body';
+
+            const tabs = document.createElement('div');
+            tabs.className = 'hw-settings-shared-tabs';
+            tabs.setAttribute('role', 'tablist');
+            tabs.setAttribute('aria-label', 'Settings providers');
+            tabs.setAttribute('aria-orientation', 'vertical');
+
+            shell.append(body, tabs);
+            anchor.parentNode?.insertBefore(shell, anchor);
+        }
+
+        const body = shell.querySelector('.hw-settings-shared-body');
+        const tabs = shell.querySelector('.hw-settings-shared-tabs');
+        if (!body || !tabs) return;
+
+        for (const providerPanel of providers) body.appendChild(providerPanel);
+
+        let activeId = '';
+        try {
+            activeId = localStorage.getItem(ACTIVE_KEY) || '';
+        } catch {
+            activeId = '';
+        }
+
+        if (!providers.some(item => item.dataset.hwSettingsProvider === activeId)) {
+            activeId = providers[0].dataset.hwSettingsProvider;
+            try {
+                localStorage.setItem(ACTIVE_KEY, activeId);
+            } catch {
+                // Deterministic in-memory fallback still applies.
+            }
+        }
+
+        tabs.replaceChildren();
+
+        for (const providerPanel of providers) {
+            const id = providerPanel.dataset.hwSettingsProvider;
+            const label = providerPanel.dataset.hwSettingsLabel || id;
+            const active = id === activeId;
+
+            providerPanel.hidden = !active;
+            providerPanel.style.setProperty(
+                'display',
+                active ? 'block' : 'none',
+                'important'
+            );
+            providerPanel.setAttribute('role', 'tabpanel');
+            providerPanel.setAttribute('aria-hidden', String(!active));
+
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = 'hw-settings-tab';
+            tab.classList.toggle('hw-settings-tab-active', active);
+            tab.textContent = label;
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', String(active));
+
+            tab.addEventListener('click', () => {
+                try {
+                    localStorage.setItem(ACTIVE_KEY, id);
+                } catch {
+                    // The current click can still be reflected in this page.
+                }
+                coordinate();
+            });
+
+            tabs.appendChild(tab);
+        }
+
+        syncShellGeometry(shell);
+    };
+
+    const root = document.documentElement;
+    if (!root.hasAttribute(COORDINATOR_ATTR)) {
+        root.setAttribute(COORDINATOR_ATTR, `${provider.id}:${Date.now()}`);
+        document.addEventListener(REGISTER_EVENT, coordinate);
+        window.addEventListener('resize', () => {
+            syncShellGeometry(document.querySelector('.hw-settings-shared-shell'));
+        }, { passive: true });
+    }
+
+    coordinate();
+    document.dispatchEvent(new Event(REGISTER_EVENT));
+}
 
 function HWUS_officialBuild() {
 // ============================================================================
@@ -521,6 +779,12 @@ function HWUS_getCurrentPlayerId() {
     // float occupies the otherwise-unused right side without depending on
     // other userscripts (such as Hobo Helper) adding their own <ul> elements.
     content.insertBefore(panel, content.firstChild);
+
+    HW_registerSharedSettingsProvider(panel, {
+        id: 'utilities',
+        label: 'Utilities',
+        order: 10
+    });
 
     // End the native Preferences section with a clear so later injected UI
     // cannot wrap up underneath the floated Utility Suite panel. The native
@@ -10627,14 +10891,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.34',
+    version: '4.35',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '8a3ac934c31da6b8d50e62ce99427f953dca31dfbab7563914d0a41ff8563688';
+const HWUS_RELEASE_SHA256 = '98acc279a53b0a68ca047e3afa224099c972b24681c4fda0977f2227e43ddf58';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -10694,7 +10958,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.34 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.35 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
