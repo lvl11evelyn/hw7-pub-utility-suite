@@ -5062,7 +5062,7 @@ HWUS_getCurrentPlayerId();
                     <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
                     <td bgcolor="#eeeeee" align="center"><strong>Class</strong></td>
                     <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="CurrentSkill" title="Click to sort by Current Skill"><strong>Current Skill ${arrow('CurrentSkill')}</strong></td>
-                    <td bgcolor="#eeeeee" align="center" colspan="2">
+                    <td class="hwus-cart-gains-heading-cell" bgcolor="#eeeeee" align="center" colspan="2">
                         <div class="hwus-cart-gains-heading-grid">
                             <span data-cart-table-sort="WeeklyGains" title="Click to sort by Weekly Gains"><strong>${arrow('WeeklyGains')} Weekly</strong></span>
                             <strong>Gains</strong>
@@ -5087,8 +5087,8 @@ HWUS_getCurrentPlayerId();
                 <td bgcolor="#f0f0f0"><a href="game.php?cmd=player&ID=${encodeURIComponent(row.id)}"></a></td>
                 <td bgcolor="#f0f0f0" align="center">${row.cls}</td>
                 <td bgcolor="#f0f0f0" align="center">${row.skill.toFixed(3)}</td>
-                <td bgcolor="#f0f0f0" align="center" style="${row.wgained > 0 ? 'color:green;font-weight:bold;' : ''}">${weekly}</td>
-                <td bgcolor="#f0f0f0" align="center" style="${row.gained > 0 ? 'color:green;font-weight:bold;' : ''}">${total}</td>
+                <td class="hwus-cart-weekly-gain-cell" bgcolor="#f0f0f0" align="center" style="${row.wgained > 0 ? 'color:green;font-weight:bold;' : ''}">${weekly}</td>
+                <td class="hwus-cart-total-gain-cell" bgcolor="#f0f0f0" align="center" style="${row.gained > 0 ? 'color:green;font-weight:bold;' : ''}">${total}</td>
                 <td bgcolor="#f0f0f0" align="center">${formatElapsed(row.firstSeenAt, row.lastSeenAt)}</td>
             `;
             tr.querySelector('a').textContent = row.name;
@@ -5322,6 +5322,17 @@ HWUS_getCurrentPlayerId();
             }
             .hwus-cart-gains-heading-grid > span:last-child {
                 text-align: left;
+            }
+            .hwus-cart-gains-heading-cell {
+                border-top: 1px solid #004400;
+                border-left: 1px solid #004400;
+                border-right: 1px solid #004400;
+            }
+            .hwus-cart-weekly-gain-cell {
+                border-left: 1px solid #004400;
+            }
+            .hwus-cart-total-gain-cell {
+                border-right: 1px solid #004400;
             }
             .hwus-cart-hof-nav {
                 width: 80%;
