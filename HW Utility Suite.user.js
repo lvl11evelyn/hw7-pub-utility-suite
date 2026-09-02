@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.41
+// @version      4.42
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -5062,8 +5062,13 @@ HWUS_getCurrentPlayerId();
                     <td bgcolor="#eeeeee"><strong>Hobo</strong></td>
                     <td bgcolor="#eeeeee" align="center"><strong>Class</strong></td>
                     <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="CurrentSkill" title="Click to sort by Current Skill"><strong>Current Skill ${arrow('CurrentSkill')}</strong></td>
-                    <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="WeeklyGains" title="Click to sort by Weekly Gains"><strong>Weekly Gains ${arrow('WeeklyGains')}</strong></td>
-                    <td bgcolor="#eeeeee" align="center" style="cursor:pointer;user-select:none;" data-cart-table-sort="TotalGains" title="Click to sort by Total Gains"><strong>Total Gains ${arrow('TotalGains')}</strong></td>
+                    <td bgcolor="#eeeeee" align="center" colspan="2">
+                        <div class="hwus-cart-gains-heading-grid">
+                            <span data-cart-table-sort="WeeklyGains" title="Click to sort by Weekly Gains"><strong>${arrow('WeeklyGains')} Weekly</strong></span>
+                            <strong>Gains</strong>
+                            <span data-cart-table-sort="TotalGains" title="Click to sort by Total Gains"><strong>Total ${arrow('TotalGains')}</strong></span>
+                        </div>
+                    </td>
                     <td bgcolor="#eeeeee" align="center"><strong>Time Passed</strong></td>
                 </tr>
             </tbody>
@@ -5074,7 +5079,7 @@ HWUS_getCurrentPlayerId();
         pageRows.forEach((row, index) => {
             const tr = document.createElement('tr');
             const rank = start + index + 1;
-            const weekly = formatCartGain(row.wgained);
+            const weekly = formatCartGain(row.wgained, false);
             const total = formatCartGain(row.gained);
 
             tr.innerHTML = `
@@ -5249,10 +5254,10 @@ HWUS_getCurrentPlayerId();
             });
     }
 
-    function formatCartGain(value) {
+    function formatCartGain(value, showPositiveSign = true) {
         const n = Number(value);
         if (!Number.isFinite(n)) return '0.000';
-        const sign = n > 0 ? '+' : '';
+        const sign = showPositiveSign && n > 0 ? '+' : '';
         return `${sign}${n.toFixed(3)}`;
     }
 
@@ -5300,6 +5305,23 @@ HWUS_getCurrentPlayerId();
             }
             #hwus-cart-global-tracker > table {
                 width: 100% !important;
+            }
+            .hwus-cart-gains-heading-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+                align-items: center;
+                gap: 7px;
+                white-space: nowrap;
+            }
+            .hwus-cart-gains-heading-grid > span {
+                cursor: pointer;
+                user-select: none;
+            }
+            .hwus-cart-gains-heading-grid > span:first-child {
+                text-align: right;
+            }
+            .hwus-cart-gains-heading-grid > span:last-child {
+                text-align: left;
             }
             .hwus-cart-hof-nav {
                 width: 80%;
