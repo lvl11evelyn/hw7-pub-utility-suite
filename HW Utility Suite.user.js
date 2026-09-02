@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.38
+// @version      4.39
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -283,6 +283,20 @@ function HWUS_officialBuild() {
 const HWUS_SETTINGS_KEY = 'hwUtilitySuite.moduleStates.v1';
 const HWUS_PLAYER_ID_KEY = 'hwUtilitySuite.currentPlayerId.v1';
 const HWUS_CONTENT_AREA_KEY = 'hwUtilitySuite.contentArea.v1';
+const HWUS_PLAYER_STAT_STORAGE_PREFIX = 'hw-player-stat-delta-logger';
+const HWUS_PLAYER_STAT_GLOBAL_FIELDS_KEY =
+    `${HWUS_PLAYER_STAT_STORAGE_PREFIX}:tracked-fields:v1`;
+const HWUS_PLAYER_STAT_GLOBAL_RECORD_KEY =
+    `${HWUS_PLAYER_STAT_STORAGE_PREFIX}:tracked-record-metrics:v1`;
+const HWUS_PLAYER_STAT_FIELDS = Object.freeze([
+    'Respect', 'Level', 'Money', 'Life', 'Record', 'MB Posts'
+]);
+const HWUS_PLAYER_STAT_DEFAULT_FIELDS = Object.freeze([
+    'Respect', 'Level', 'Money', 'Life', 'Record'
+]);
+const HWUS_PLAYER_STAT_RECORD_METRICS = Object.freeze([
+    'Fights', 'Wins', 'Losses', 'W/R%'
+]);
 
 const HWUS_CONTENT_AREA_DEFAULTS = Object.freeze({
     enabled: false,
@@ -331,6 +345,113 @@ function HWUS_setModuleEnabled(moduleId, enabled) {
     const states = HWUS_loadModuleStates();
     states[String(moduleId)] = !!enabled;
     HWUS_saveModuleStates(states);
+}
+
+function HWUS_readLocalJSON(key, fallback) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key));
+        return parsed ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function HWUS_loadGlobalPlayerStatFields() {
+    const saved = HWUS_readLocalJSON(HWUS_PLAYER_STAT_GLOBAL_FIELDS_KEY, null);
+    if (!Array.isArray(saved)) {
+        return new Set(HWUS_PLAYER_STAT_DEFAULT_FIELDS);
+    }
+
+    return new Set(saved.filter(field => HWUS_PLAYER_STAT_FIELDS.includes(field)));
+}
+
+function HWUS_loadGlobalPlayerRecordMetrics(globalFields) {
+    const saved = HWUS_readLocalJSON(HWUS_PLAYER_STAT_GLOBAL_RECORD_KEY, null);
+    if (Array.isArray(saved)) {
+        return new Set(saved.filter(metricId =>
+            HWUS_PLAYER_STAT_RECORD_METRICS.includes(metricId)
+        ));
+    }
+
+    return new Set(
+        globalFields.has('Record') ? HWUS_PLAYER_STAT_RECORD_METRICS : []
+    );
+}
+
+function HWUS_saveGlobalPlayerStatSettings(globalFields, recordMetrics) {
+    localStorage.setItem(
+        HWUS_PLAYER_STAT_GLOBAL_FIELDS_KEY,
+        JSON.stringify(HWUS_PLAYER_STAT_FIELDS.filter(field =>
+            field === 'Record'
+                ? recordMetrics.size > 0
+                : globalFields.has(field)
+        ))
+    );
+    localStorage.setItem(
+        HWUS_PLAYER_STAT_GLOBAL_RECORD_KEY,
+        JSON.stringify(HWUS_PLAYER_STAT_RECORD_METRICS.filter(metricId =>
+            recordMetrics.has(metricId)
+        ))
+    );
+}
+
+function HWUS_resetGlobalPlayerStatBaselines(field, recordMetricId = null) {
+    const snapshotPrefix = `${HWUS_PLAYER_STAT_STORAGE_PREFIX}:snapshot:`;
+    const fieldOverridePrefix =
+        `${HWUS_PLAYER_STAT_STORAGE_PREFIX}:tracked-field-overrides:`;
+    const recordOverridePrefix =
+        `${HWUS_PLAYER_STAT_STORAGE_PREFIX}:tracked-record-metric-overrides:`;
+    const pendingRecordPrefix =
+        `${HWUS_PLAYER_STAT_STORAGE_PREFIX}:pending-record-baselines:`;
+    const snapshotKeys = [];
+
+    for (let index = 0; index < localStorage.length; index++) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(snapshotPrefix)) snapshotKeys.push(key);
+    }
+
+    for (const snapshotKey of snapshotKeys) {
+        const snapshotPlayerId = snapshotKey.slice(snapshotPrefix.length);
+        const fieldOverrides = HWUS_readLocalJSON(
+            `${fieldOverridePrefix}${snapshotPlayerId}:v1`,
+            {}
+        );
+        const recordOverrides = HWUS_readLocalJSON(
+            `${recordOverridePrefix}${snapshotPlayerId}:v1`,
+            {}
+        );
+        const hasFieldOverride = fieldOverrides &&
+            typeof fieldOverrides === 'object' &&
+            typeof fieldOverrides[field] === 'boolean';
+        const hasRecordOverride = recordMetricId !== null &&
+            recordOverrides &&
+            typeof recordOverrides === 'object' &&
+            typeof recordOverrides[recordMetricId] === 'boolean';
+
+        if (hasFieldOverride || hasRecordOverride) continue;
+
+        if (recordMetricId !== null) {
+            const pendingKey = `${pendingRecordPrefix}${snapshotPlayerId}:v1`;
+            const savedPending = HWUS_readLocalJSON(pendingKey, []);
+            const pending = new Set(
+                (Array.isArray(savedPending) ? savedPending : []).filter(
+                    metricId =>
+                        HWUS_PLAYER_STAT_RECORD_METRICS.includes(metricId)
+                )
+            );
+            pending.add(recordMetricId);
+            localStorage.setItem(pendingKey, JSON.stringify([...pending]));
+            continue;
+        }
+
+        const snapshot = HWUS_readLocalJSON(snapshotKey, {});
+        if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+            continue;
+        }
+
+        delete snapshot[field];
+        localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
+    }
 }
 
 function HWUS_normalizeContentAreaSettings(value) {
@@ -573,6 +694,47 @@ function HWUS_getCurrentPlayerId() {
             color: #555;
             font-size: 10px;
         }
+        #hwus-preferences-panel .hwus-player-stat-settings {
+            margin-top: 9px;
+            padding-top: 8px;
+            border-top: 1px solid #ccc;
+            color: #555;
+            font-size: 10px;
+        }
+        #hwus-preferences-panel .hwus-player-stat-title {
+            margin-bottom: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        #hwus-preferences-panel .hwus-player-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 3px 6px;
+        }
+        #hwus-preferences-panel .hwus-player-stat-option {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        #hwus-preferences-panel .hwus-player-stat-option input {
+            margin: 0;
+        }
+        #hwus-preferences-panel .hwus-player-record-children {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 3px 6px;
+            margin: 4px 0 0 8px;
+            padding: 3px 0 0 8px;
+            border-left: 1px solid #ccc;
+        }
+        #hwus-preferences-panel .hwus-player-stat-help {
+            margin-top: 4px;
+            text-align: center;
+            color: #888;
+        }
         #hwus-preferences-panel .hwus-content-area-toggle {
             display: flex;
             align-items: center;
@@ -697,6 +859,129 @@ function HWUS_getCurrentPlayerId() {
     disableAll.addEventListener('click', () => setAll(false));
     actions.append(enableAll, disableAll);
 
+    const globalStatFields = HWUS_loadGlobalPlayerStatFields();
+    const globalRecordMetrics =
+        HWUS_loadGlobalPlayerRecordMetrics(globalStatFields);
+
+    const playerStatSection = document.createElement('div');
+    playerStatSection.className = 'hwus-player-stat-settings';
+
+    const playerStatTitle = document.createElement('div');
+    playerStatTitle.className = 'hwus-player-stat-title';
+    playerStatTitle.textContent = 'Player Stat Tracker Defaults';
+
+    const playerStatGrid = document.createElement('div');
+    playerStatGrid.className = 'hwus-player-stat-grid';
+
+    const makeGlobalStatOption = field => {
+        const label = document.createElement('label');
+        label.className = 'hwus-player-stat-option';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = globalStatFields.has(field);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) globalStatFields.add(field);
+            else globalStatFields.delete(field);
+            HWUS_resetGlobalPlayerStatBaselines(field);
+            HWUS_saveGlobalPlayerStatSettings(
+                globalStatFields,
+                globalRecordMetrics
+            );
+        });
+
+        const text = document.createElement('span');
+        text.textContent = field;
+        label.append(checkbox, text);
+        return label;
+    };
+
+    for (const field of HWUS_PLAYER_STAT_FIELDS) {
+        if (field === 'Record') continue;
+        playerStatGrid.append(makeGlobalStatOption(field));
+    }
+
+    const recordOption = document.createElement('label');
+    recordOption.className = 'hwus-player-stat-option';
+
+    const recordCheckbox = document.createElement('input');
+    recordCheckbox.type = 'checkbox';
+
+    const recordText = document.createElement('span');
+    recordText.textContent = 'Record';
+    recordOption.append(recordCheckbox, recordText);
+    playerStatGrid.append(recordOption);
+
+    const recordChildren = document.createElement('div');
+    recordChildren.className = 'hwus-player-record-children';
+    const recordCheckboxes = new Map();
+
+    const syncRecordParent = () => {
+        const selectedCount = HWUS_PLAYER_STAT_RECORD_METRICS.filter(metricId =>
+            globalRecordMetrics.has(metricId)
+        ).length;
+        recordCheckbox.checked =
+            selectedCount === HWUS_PLAYER_STAT_RECORD_METRICS.length;
+        recordCheckbox.indeterminate = selectedCount > 0 &&
+            selectedCount < HWUS_PLAYER_STAT_RECORD_METRICS.length;
+    };
+
+    const saveRecordDefaults = changedMetrics => {
+        for (const metricId of changedMetrics) {
+            HWUS_resetGlobalPlayerStatBaselines('Record', metricId);
+        }
+        HWUS_saveGlobalPlayerStatSettings(globalStatFields, globalRecordMetrics);
+        syncRecordParent();
+    };
+
+    for (const metricId of HWUS_PLAYER_STAT_RECORD_METRICS) {
+        const label = document.createElement('label');
+        label.className = 'hwus-player-stat-option';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = globalRecordMetrics.has(metricId);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) globalRecordMetrics.add(metricId);
+            else globalRecordMetrics.delete(metricId);
+            saveRecordDefaults([metricId]);
+        });
+
+        const text = document.createElement('span');
+        text.textContent = metricId;
+        label.append(checkbox, text);
+        recordChildren.append(label);
+        recordCheckboxes.set(metricId, checkbox);
+    }
+
+    recordCheckbox.addEventListener('change', () => {
+        const changedMetrics = [];
+
+        for (const [metricId, checkbox] of recordCheckboxes) {
+            if (checkbox.checked === recordCheckbox.checked) continue;
+            checkbox.checked = recordCheckbox.checked;
+            changedMetrics.push(metricId);
+            if (recordCheckbox.checked) globalRecordMetrics.add(metricId);
+            else globalRecordMetrics.delete(metricId);
+        }
+
+        saveRecordDefaults(changedMetrics);
+    });
+
+    syncRecordParent();
+
+    const playerStatHelp = document.createElement('div');
+    playerStatHelp.className = 'hwus-player-stat-help';
+    playerStatHelp.textContent =
+        'Defaults apply to every hobo; use a profile cog for exceptions.';
+
+    playerStatSection.append(
+        playerStatTitle,
+        playerStatGrid,
+        recordChildren,
+        playerStatHelp
+    );
+
     const contentAreaSettings = HWUS_loadContentAreaSettings();
 
     const contentAreaSection = document.createElement('div');
@@ -773,7 +1058,15 @@ function HWUS_getCurrentPlayerId() {
     note.className = 'hwus-note';
     note.textContent = 'Changes apply on the next page load.';
 
-    panel.append(titleRow, subtitle, grid, actions, contentAreaSection, note);
+    panel.append(
+        titleRow,
+        subtitle,
+        grid,
+        actions,
+        playerStatSection,
+        contentAreaSection,
+        note
+    );
 
     // The native top-level Preferences menu is a sequence of links and <br>
     // nodes rather than a semantic list. Prepend the panel directly so its
@@ -2196,12 +2489,13 @@ HWUS_getCurrentPlayerId();
 
     if (!HWUS_isModuleEnabled(4)) return;
 
-    const MODULE = 'hw-player-stat-delta-logger';
+    const MODULE = HWUS_PLAYER_STAT_STORAGE_PREFIX;
     const MAX_RECORDINGS = 200;
-    const GLOBAL_SETTINGS_KEY = `${MODULE}:tracked-fields:v1`;
+    const GLOBAL_SETTINGS_KEY = HWUS_PLAYER_STAT_GLOBAL_FIELDS_KEY;
+    const GLOBAL_RECORD_SETTINGS_KEY = HWUS_PLAYER_STAT_GLOBAL_RECORD_KEY;
 
-    const FIELD_ORDER = ['Respect', 'Level', 'Money', 'Life', 'Record', 'MB Posts'];
-    const DEFAULT_FIELDS = ['Respect', 'Level', 'Money', 'Life', 'Record'];
+    const FIELD_ORDER = [...HWUS_PLAYER_STAT_FIELDS];
+    const DEFAULT_FIELDS = [...HWUS_PLAYER_STAT_DEFAULT_FIELDS];
 
     const FIELD_COLORS = {
         Respect: '#d60b10',
@@ -2213,11 +2507,12 @@ HWUS_getCurrentPlayerId();
     };
 
     const RECORD_METRICS = [
-        { label: 'Record (Fights)', index: 0, percent: false },
-        { label: 'Record (Wins)', index: 1, percent: false },
-        { label: 'Record (Losses)', index: 2, percent: false },
-        { label: 'Record (W/R%)', index: 3, percent: true }
+        { id: 'Fights', label: 'Record (Fights)', index: 0, percent: false },
+        { id: 'Wins', label: 'Record (Wins)', index: 1, percent: false },
+        { id: 'Losses', label: 'Record (Losses)', index: 2, percent: false },
+        { id: 'W/R%', label: 'Record (W/R%)', index: 3, percent: true }
     ];
+    const RECORD_METRIC_IDS = RECORD_METRICS.map(metric => metric.id);
 
     const url = new URL(location.href);
     const playerId = url.searchParams.get('ID');
@@ -2232,7 +2527,9 @@ HWUS_getCurrentPlayerId();
 
     const STORAGE = {
         snapshot: `${MODULE}:snapshot:${playerId}`,
-        history: `${MODULE}:history:${playerId}`
+        history: `${MODULE}:history:${playerId}`,
+        pendingRecordBaselines:
+            `${MODULE}:pending-record-baselines:${playerId}:v1`
     };
 
     const citizenInfo = locateCitizenInformation();
@@ -2244,13 +2541,31 @@ HWUS_getCurrentPlayerId();
     if (!currentSnapshot) return;
 
     let globalTrackedFields = loadGlobalTrackedFields();
+    let globalTrackedRecordMetrics = loadGlobalTrackedRecordMetrics();
     let hoboOverrides = loadHoboOverrides();
+    let hoboRecordMetricOverrides = loadHoboRecordMetricOverrides();
+    delete hoboOverrides.Record;
     normalizeHoboOverrides();
+    normalizeHoboRecordMetricOverrides();
     saveHoboOverrides();
+    saveHoboRecordMetricOverrides();
+    saveGlobalTrackedFields();
+    saveGlobalTrackedRecordMetrics();
+    let trackedRecordMetrics = resolveTrackedRecordMetrics();
     let trackedFields = resolveTrackedFields();
     let activeFields = FIELD_ORDER.filter(field => trackedFields.has(field));
     const previousSnapshot = readJSON(STORAGE.snapshot, null);
     const history = readJSON(STORAGE.history, []);
+    const savedPendingRecordBaselines = readJSON(
+        STORAGE.pendingRecordBaselines,
+        []
+    );
+    const pendingRecordBaselines = new Set(
+        (Array.isArray(savedPendingRecordBaselines)
+            ? savedPendingRecordBaselines
+            : []
+        ).filter(metricId => RECORD_METRIC_IDS.includes(metricId))
+    );
 
     if (!previousSnapshot) {
         if (activeFields.length) {
@@ -2258,26 +2573,45 @@ HWUS_getCurrentPlayerId();
             saveHistory(history);
         }
     } else {
-        const changedFields = activeFields.filter(field =>
-            numericValuesChanged(
+        const changedFields = activeFields.filter(field => {
+            if (!previousSnapshot[field]) return false;
+
+            return numericValuesChanged(
                 previousSnapshot[field]?.numbers,
                 currentSnapshot[field]?.numbers
-            )
-        );
+            );
+        });
 
         if (changedFields.length) {
-            history.unshift(
-                makeRecording(
-                    currentSnapshot,
-                    previousSnapshot,
-                    changedFields,
-                    false
-                )
+            const recording = makeRecording(
+                currentSnapshot,
+                previousSnapshot,
+                changedFields,
+                false
             );
+
+            if (recording.fields.Record && pendingRecordBaselines.size) {
+                recording.fields.Record.visibleMetrics =
+                    recording.fields.Record.visibleMetrics.filter(metricId =>
+                        !pendingRecordBaselines.has(metricId)
+                    );
+
+                if (!recording.fields.Record.visibleMetrics.length) {
+                    delete recording.fields.Record;
+                }
+            }
+
+            if (Object.keys(recording.fields).length) history.unshift(recording);
 
             saveHistory(history);
         }
     }
+
+    addInitialRecording(
+        activeFields.filter(field => field !== 'Record'),
+        [...trackedRecordMetrics]
+    );
+    localStorage.removeItem(STORAGE.pendingRecordBaselines);
 
     saveActiveSnapshot();
     injectPanel(history);
@@ -2409,6 +2743,10 @@ HWUS_getCurrentPlayerId();
                     return Number.isFinite(oldValue) ? value - oldValue : null;
                 })
             };
+
+            if (field === 'Record') {
+                fields[field].visibleMetrics = [...trackedRecordMetrics];
+            }
         }
 
         return {
@@ -2416,6 +2754,58 @@ HWUS_getCurrentPlayerId();
             initial,
             fields
         };
+    }
+
+    function addInitialRecording(fields, recordMetricIds) {
+        const pendingFields = fields.filter(field =>
+            !latestVisibleRecordingMatchesField(field)
+        );
+        const pendingRecordMetrics = recordMetricIds.filter(metricId =>
+            !latestVisibleRecordingMatchesRecordMetric(metricId)
+        );
+        const initialFields = [...pendingFields];
+        if (pendingRecordMetrics.length) initialFields.push('Record');
+        if (!initialFields.length) return;
+
+        const recording = makeRecording(
+            currentSnapshot,
+            null,
+            initialFields,
+            true
+        );
+
+        if (pendingRecordMetrics.length && recording.fields.Record) {
+            recording.fields.Record.visibleMetrics = [...pendingRecordMetrics];
+        }
+
+        history.unshift(recording);
+        saveHistory(history);
+    }
+
+    function latestVisibleRecordingMatchesField(field) {
+        const latest = history.find(recording => recording.fields?.[field]);
+        if (!latest) return false;
+
+        return !numericValuesChanged(
+            latest.fields[field].currentNumbers,
+            currentSnapshot[field]?.numbers
+        );
+    }
+
+    function latestVisibleRecordingMatchesRecordMetric(metricId) {
+        const metric = RECORD_METRICS.find(candidate => candidate.id === metricId);
+        if (!metric) return false;
+
+        const latest = history.find(recording => {
+            const entry = recording.fields?.Record;
+            if (!entry) return false;
+            return !Array.isArray(entry.visibleMetrics) ||
+                entry.visibleMetrics.includes(metricId);
+        });
+        if (!latest) return false;
+
+        return latest.fields.Record.currentNumbers?.[metric.index] ===
+            currentSnapshot.Record?.numbers?.[metric.index];
     }
 
     function saveHistory(history) {
@@ -2506,6 +2896,7 @@ HWUS_getCurrentPlayerId();
             }
 
             settingsPopover = buildSettingsPopover(() => {
+                trackedRecordMetrics = resolveTrackedRecordMetrics();
                 trackedFields = resolveTrackedFields();
                 activeFields = FIELD_ORDER.filter(field => trackedFields.has(field));
                 saveActiveSnapshot();
@@ -2559,95 +2950,153 @@ HWUS_getCurrentPlayerId();
         popover.setAttribute('role', 'group');
         popover.setAttribute('aria-label', 'Tracked player stats');
 
-        let scope = 'hobo';
+        const markOverride = (label, overridden) => {
+            label.classList.toggle(
+                `${MODULE}-settings-option-overridden`,
+                overridden
+            );
+
+            if (!overridden) return;
+
+            const marker = document.createElement('small');
+            marker.className = `${MODULE}-settings-override-marker`;
+            marker.textContent = 'override';
+            label.append(marker);
+        };
+
+        const applyChangedSettings = (previousFields, previousRecordMetrics) => {
+            trackedRecordMetrics = resolveTrackedRecordMetrics();
+            trackedFields = resolveTrackedFields();
+
+            const newlyEnabledFields = FIELD_ORDER.filter(field =>
+                field !== 'Record' &&
+                trackedFields.has(field) &&
+                !previousFields.has(field)
+            );
+            const newlyEnabledRecordMetrics = RECORD_METRIC_IDS.filter(metricId =>
+                trackedRecordMetrics.has(metricId) &&
+                !previousRecordMetrics.has(metricId)
+            );
+
+            addInitialRecording(newlyEnabledFields, newlyEnabledRecordMetrics);
+            onChanged();
+            render();
+        };
+
+        const changeRecordMetrics = (metricIds, checked) => {
+            const previousFields = new Set(trackedFields);
+            const previousRecordMetrics = new Set(trackedRecordMetrics);
+
+            for (const metricId of metricIds) {
+                const globalValue = globalTrackedRecordMetrics.has(metricId);
+                if (checked === globalValue) {
+                    delete hoboRecordMetricOverrides[metricId];
+                } else {
+                    hoboRecordMetricOverrides[metricId] = checked;
+                }
+            }
+            saveHoboRecordMetricOverrides();
+
+            applyChangedSettings(previousFields, previousRecordMetrics);
+        };
 
         const render = () => {
             popover.replaceChildren();
 
             const title = document.createElement('div');
             title.className = `${MODULE}-settings-title`;
-            title.textContent = 'Track Stats';
-
-            const scopes = document.createElement('div');
-            scopes.className = `${MODULE}-settings-scopes`;
-
-            const hoboScope = document.createElement('button');
-            hoboScope.type = 'button';
-            hoboScope.textContent = 'This Hobo';
-            hoboScope.className = `${MODULE}-settings-scope`;
-            hoboScope.classList.toggle(`${MODULE}-settings-scope-active`, scope === 'hobo');
-            hoboScope.addEventListener('click', () => {
-                scope = 'hobo';
-                render();
-            });
-
-            const globalScope = document.createElement('button');
-            globalScope.type = 'button';
-            globalScope.textContent = 'Global';
-            globalScope.className = `${MODULE}-settings-scope`;
-            globalScope.classList.toggle(`${MODULE}-settings-scope-active`, scope === 'global');
-            globalScope.addEventListener('click', () => {
-                scope = 'global';
-                render();
-            });
-
-            scopes.append(hoboScope, globalScope);
-            popover.append(title, scopes);
+            title.textContent = 'Track This Hobo';
+            popover.append(title);
 
             for (const field of FIELD_ORDER) {
+                if (field === 'Record') {
+                    const group = document.createElement('div');
+                    group.className = `${MODULE}-settings-record-group`;
+
+                    const label = document.createElement('label');
+                    label.className = `${MODULE}-settings-option`;
+
+                    const selectedMetrics = trackedRecordMetrics;
+                    const selectedCount = RECORD_METRIC_IDS.filter(metricId =>
+                        selectedMetrics.has(metricId)
+                    ).length;
+                    const overridden = RECORD_METRIC_IDS.some(metricId =>
+                        hasHoboRecordMetricOverride(metricId)
+                    );
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = selectedCount === RECORD_METRIC_IDS.length;
+                    checkbox.indeterminate = selectedCount > 0 &&
+                        selectedCount < RECORD_METRIC_IDS.length;
+                    checkbox.addEventListener('change', () => {
+                        changeRecordMetrics(RECORD_METRIC_IDS, checkbox.checked);
+                    });
+
+                    const text = document.createElement('span');
+                    text.textContent = field;
+                    label.append(checkbox, text);
+                    markOverride(label, overridden);
+                    group.append(label);
+
+                    const children = document.createElement('div');
+                    children.className = `${MODULE}-settings-record-children`;
+
+                    for (const metric of RECORD_METRICS) {
+                        const childLabel = document.createElement('label');
+                        childLabel.className =
+                            `${MODULE}-settings-option ${MODULE}-settings-option-child`;
+
+                        const childCheckbox = document.createElement('input');
+                        childCheckbox.type = 'checkbox';
+                        childCheckbox.checked = selectedMetrics.has(metric.id);
+                        childCheckbox.addEventListener('change', () => {
+                            changeRecordMetrics([metric.id], childCheckbox.checked);
+                        });
+
+                        const childText = document.createElement('span');
+                        childText.textContent = metric.id;
+                        childLabel.append(childCheckbox, childText);
+                        markOverride(
+                            childLabel,
+                            hasHoboRecordMetricOverride(metric.id)
+                        );
+                        children.append(childLabel);
+                    }
+
+                    group.append(children);
+                    popover.append(group);
+                    continue;
+                }
+
                 const label = document.createElement('label');
                 label.className = `${MODULE}-settings-option`;
 
                 const overridden = hasHoboOverride(field);
-                label.classList.toggle(
-                    `${MODULE}-settings-option-overridden`,
-                    scope === 'hobo' && overridden
-                );
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
-                checkbox.checked = scope === 'global'
-                    ? globalTrackedFields.has(field)
-                    : trackedFields.has(field);
+                checkbox.checked = trackedFields.has(field);
 
                 checkbox.addEventListener('change', () => {
-                    if (scope === 'global') {
-                        const previousGlobalValue = globalTrackedFields.has(field);
-                        if (checkbox.checked) globalTrackedFields.add(field);
-                        else globalTrackedFields.delete(field);
-                        resetAffectedSnapshots(
-                            field,
-                            previousGlobalValue,
-                            checkbox.checked
-                        );
-                        saveGlobalTrackedFields();
-                        normalizeHoboOverrides();
-                        saveHoboOverrides();
-                    } else {
-                        const globalValue = globalTrackedFields.has(field);
-                        if (checkbox.checked === globalValue) {
-                            delete hoboOverrides[field];
-                        } else {
-                            hoboOverrides[field] = checkbox.checked;
-                        }
-                        saveHoboOverrides();
-                    }
+                    const previousFields = new Set(trackedFields);
+                    const previousRecordMetrics = new Set(trackedRecordMetrics);
 
-                    trackedFields = resolveTrackedFields();
-                    onChanged();
-                    render();
+                    const globalValue = globalTrackedFields.has(field);
+                    if (checkbox.checked === globalValue) {
+                        delete hoboOverrides[field];
+                    } else {
+                        hoboOverrides[field] = checkbox.checked;
+                    }
+                    saveHoboOverrides();
+
+                    applyChangedSettings(previousFields, previousRecordMetrics);
                 });
 
                 const text = document.createElement('span');
                 text.textContent = field;
                 label.append(checkbox, text);
-
-                if (scope === 'hobo' && overridden) {
-                    const marker = document.createElement('small');
-                    marker.className = `${MODULE}-settings-override-marker`;
-                    marker.textContent = 'override';
-                    label.append(marker);
-                }
+                markOverride(label, overridden);
 
                 popover.append(label);
             }
@@ -2676,7 +3125,14 @@ HWUS_getCurrentPlayerId();
             const initial = entry.initial ?? recording.initial;
 
             if (field === 'Record' && entry.currentNumbers?.length >= 4) {
+                const limitedMetrics = Array.isArray(entry.visibleMetrics)
+                    ? new Set(entry.visibleMetrics)
+                    : null;
+
                 for (const metric of RECORD_METRICS) {
+                    if (!trackedRecordMetrics.has(metric.id)) continue;
+                    if (limitedMetrics && !limitedMetrics.has(metric.id)) continue;
+
                     const deltaValue = entry.deltas?.[metric.index];
 
                     if (
@@ -2857,10 +3313,36 @@ HWUS_getCurrentPlayerId();
         return new Set(saved.filter(field => FIELD_ORDER.includes(field)));
     }
 
+    function loadGlobalTrackedRecordMetrics() {
+        const saved = readJSON(GLOBAL_RECORD_SETTINGS_KEY, null);
+        if (Array.isArray(saved)) {
+            return new Set(saved.filter(metricId =>
+                RECORD_METRIC_IDS.includes(metricId)
+            ));
+        }
+
+        return new Set(
+            globalTrackedFields.has('Record') ? RECORD_METRIC_IDS : []
+        );
+    }
+
     function saveGlobalTrackedFields() {
         localStorage.setItem(
             GLOBAL_SETTINGS_KEY,
-            JSON.stringify(FIELD_ORDER.filter(field => globalTrackedFields.has(field)))
+            JSON.stringify(FIELD_ORDER.filter(field =>
+                field === 'Record'
+                    ? globalTrackedRecordMetrics.size > 0
+                    : globalTrackedFields.has(field)
+            ))
+        );
+    }
+
+    function saveGlobalTrackedRecordMetrics() {
+        localStorage.setItem(
+            GLOBAL_RECORD_SETTINGS_KEY,
+            JSON.stringify(RECORD_METRIC_IDS.filter(metricId =>
+                globalTrackedRecordMetrics.has(metricId)
+            ))
         );
     }
 
@@ -2875,11 +3357,45 @@ HWUS_getCurrentPlayerId();
         );
     }
 
+    function loadHoboRecordMetricOverrides() {
+        const key = `${MODULE}:tracked-record-metric-overrides:${playerId}:v1`;
+        const saved = readJSON(key, null);
+
+        if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+            return Object.fromEntries(
+                Object.entries(saved).filter(([metricId, value]) =>
+                    RECORD_METRIC_IDS.includes(metricId) &&
+                    typeof value === 'boolean'
+                )
+            );
+        }
+
+        if (typeof hoboOverrides.Record === 'boolean') {
+            return Object.fromEntries(
+                RECORD_METRIC_IDS.map(metricId => [metricId, hoboOverrides.Record])
+            );
+        }
+
+        return {};
+    }
+
     function resolveTrackedFields() {
-        return new Set(FIELD_ORDER.filter(field =>
-            hasHoboOverride(field)
+        const resolved = new Set(FIELD_ORDER.filter(field =>
+            field !== 'Record' &&
+            (hasHoboOverride(field)
                 ? hoboOverrides[field]
-                : globalTrackedFields.has(field)
+                : globalTrackedFields.has(field))
+        ));
+
+        if (trackedRecordMetrics.size) resolved.add('Record');
+        return resolved;
+    }
+
+    function resolveTrackedRecordMetrics() {
+        return new Set(RECORD_METRIC_IDS.filter(metricId =>
+            hasHoboRecordMetricOverride(metricId)
+                ? hoboRecordMetricOverrides[metricId]
+                : globalTrackedRecordMetrics.has(metricId)
         ));
     }
 
@@ -2887,10 +3403,30 @@ HWUS_getCurrentPlayerId();
         return Object.prototype.hasOwnProperty.call(hoboOverrides, field);
     }
 
+    function hasHoboRecordMetricOverride(metricId) {
+        return Object.prototype.hasOwnProperty.call(
+            hoboRecordMetricOverrides,
+            metricId
+        );
+    }
+
     function normalizeHoboOverrides() {
+        delete hoboOverrides.Record;
+
         for (const field of Object.keys(hoboOverrides)) {
             if (hoboOverrides[field] === globalTrackedFields.has(field)) {
                 delete hoboOverrides[field];
+            }
+        }
+    }
+
+    function normalizeHoboRecordMetricOverrides() {
+        for (const metricId of Object.keys(hoboRecordMetricOverrides)) {
+            if (
+                hoboRecordMetricOverrides[metricId] ===
+                globalTrackedRecordMetrics.has(metricId)
+            ) {
+                delete hoboRecordMetricOverrides[metricId];
             }
         }
     }
@@ -2906,48 +3442,14 @@ HWUS_getCurrentPlayerId();
         }
     }
 
-    function resetAffectedSnapshots(field, previousGlobalValue, nextGlobalValue) {
-        if (previousGlobalValue === nextGlobalValue) return;
+    function saveHoboRecordMetricOverrides() {
+        const key = `${MODULE}:tracked-record-metric-overrides:${playerId}:v1`;
+        normalizeHoboRecordMetricOverrides();
 
-        const snapshotPrefix = `${MODULE}:snapshot:`;
-        const overridePrefix = `${MODULE}:tracked-field-overrides:`;
-        const overrideSuffix = ':v1';
-        const snapshotKeys = [];
-
-        for (let index = 0; index < localStorage.length; index++) {
-            const key = localStorage.key(index);
-            if (key?.startsWith(snapshotPrefix)) snapshotKeys.push(key);
-        }
-
-        for (const snapshotKey of snapshotKeys) {
-            const snapshotPlayerId = snapshotKey.slice(snapshotPrefix.length);
-            const savedOverrides = readJSON(
-                `${overridePrefix}${snapshotPlayerId}${overrideSuffix}`,
-                {}
-            );
-            const hasOverride = Boolean(
-                savedOverrides &&
-                typeof savedOverrides === 'object' &&
-                !Array.isArray(savedOverrides) &&
-                Object.prototype.hasOwnProperty.call(savedOverrides, field) &&
-                typeof savedOverrides[field] === 'boolean'
-            );
-            const previousEffective = hasOverride
-                ? savedOverrides[field]
-                : previousGlobalValue;
-            const nextEffective = hasOverride
-                ? savedOverrides[field]
-                : nextGlobalValue;
-
-            if (previousEffective === nextEffective) continue;
-
-            const snapshot = readJSON(snapshotKey, {});
-            if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-                continue;
-            }
-
-            delete snapshot[field];
-            localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
+        if (Object.keys(hoboRecordMetricOverrides).length) {
+            localStorage.setItem(key, JSON.stringify(hoboRecordMetricOverrides));
+        } else {
+            localStorage.removeItem(key);
         }
     }
 
@@ -3061,36 +3563,6 @@ HWUS_getCurrentPlayerId();
                 font-weight: bold;
             }
 
-            .${MODULE}-settings-scopes {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 3px;
-                margin-bottom: 4px;
-            }
-
-            .${MODULE}-settings-scope {
-                padding: 2px 4px;
-                border: 1px solid #bbb;
-                border-radius: 2px;
-                background: #eee;
-                color: #555;
-                font: bold 9px/13px Tahoma, Arial, sans-serif;
-                cursor: pointer;
-            }
-
-            .${MODULE}-settings-scope:hover,
-            .${MODULE}-settings-scope:focus-visible {
-                border-color: #777;
-                color: #111;
-                outline: none;
-            }
-
-            .${MODULE}-settings-scope-active {
-                border-color: #888;
-                background: #dce8ef;
-                color: #111;
-            }
-
             .${MODULE}-settings-option {
                 display: flex;
                 align-items: center;
@@ -3102,6 +3574,16 @@ HWUS_getCurrentPlayerId();
 
             .${MODULE}-settings-option input {
                 margin: 0;
+            }
+
+            .${MODULE}-settings-record-children {
+                margin-left: 8px;
+                padding-left: 8px;
+                border-left: 1px solid #ccc;
+            }
+
+            .${MODULE}-settings-option-child {
+                color: #444;
             }
 
             .${MODULE}-settings-option-overridden {
