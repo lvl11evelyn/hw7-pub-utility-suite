@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HW Utility Suite
 // @namespace    https://www.hobowars.com/
-// @version      4.36
+// @version      4.37
 // @description  Configurable HW1 Utility Suite: 14 independently toggleable modules for fighting, tracking, navigation, UI, and quality-of-life improvements.
 // @author       lvl11evelyn HW1(2924238)
 // @homepageURL  https://github.com/lvl11evelyn/hw7-pub-utility-suite
@@ -2189,7 +2189,7 @@ HWUS_getCurrentPlayerId();
 })();
 // ============================================================================
 // MODULE 4: PLAYER STATS TRACKER
-// Adds a small panel that records a player's various record stats per profile.
+// Adds a small panel that records globally selected stats per player profile.
 // ============================================================================
 (() => {
     'use strict';
@@ -2198,18 +2198,22 @@ HWUS_getCurrentPlayerId();
 
     const MODULE = 'hw-player-stat-delta-logger';
     const MAX_RECORDINGS = 200;
+    const GLOBAL_SETTINGS_KEY = `${MODULE}:tracked-fields:v1`;
 
-    const FIELD_ORDER = ['Respect', 'Level', 'Money', 'Life', 'Record'];
+    const FIELD_ORDER = ['Respect', 'Level', 'Money', 'Life', 'Record', 'MB Posts'];
+    const DEFAULT_FIELDS = ['Respect', 'Level', 'Money', 'Life', 'Record'];
 
     const FIELD_COLORS = {
         Respect: '#d60b10',
         Level: '#f600f6',
         Money: '#3aba00',
         Life: '#0000dd',
-        Record: '#c58d06'
+        Record: '#c58d06',
+        'MB Posts': '#7652a7'
     };
 
     const RECORD_METRICS = [
+        { label: 'Record (Fights)', index: 0, percent: false },
         { label: 'Record (Wins)', index: 1, percent: false },
         { label: 'Record (Losses)', index: 2, percent: false },
         { label: 'Record (W/R%)', index: 3, percent: true }
@@ -2239,14 +2243,22 @@ HWUS_getCurrentPlayerId();
     const currentSnapshot = readSnapshot(citizenInfo);
     if (!currentSnapshot) return;
 
+    let globalTrackedFields = loadGlobalTrackedFields();
+    let hoboOverrides = loadHoboOverrides();
+    normalizeHoboOverrides();
+    saveHoboOverrides();
+    let trackedFields = resolveTrackedFields();
+    let activeFields = FIELD_ORDER.filter(field => trackedFields.has(field));
     const previousSnapshot = readJSON(STORAGE.snapshot, null);
     const history = readJSON(STORAGE.history, []);
 
     if (!previousSnapshot) {
-        history.unshift(makeRecording(currentSnapshot, null, FIELD_ORDER, true));
-        saveHistory(history);
+        if (activeFields.length) {
+            history.unshift(makeRecording(currentSnapshot, null, activeFields, true));
+            saveHistory(history);
+        }
     } else {
-        const changedFields = FIELD_ORDER.filter(field =>
+        const changedFields = activeFields.filter(field =>
             numericValuesChanged(
                 previousSnapshot[field]?.numbers,
                 currentSnapshot[field]?.numbers
@@ -2267,7 +2279,7 @@ HWUS_getCurrentPlayerId();
         }
     }
 
-    localStorage.setItem(STORAGE.snapshot, JSON.stringify(currentSnapshot));
+    saveActiveSnapshot();
     injectPanel(history);
 
     function locateCitizenInformation() {
@@ -2382,13 +2394,15 @@ HWUS_getCurrentPlayerId();
         for (const field of changedFields) {
             const currentNumbers = current[field]?.numbers || [];
             const previousNumbers = previous?.[field]?.numbers || [];
+            const fieldInitial = initial || !previous?.[field];
 
             fields[field] = {
+                initial: fieldInitial,
                 currentText: current[field]?.text || '',
                 currentNumbers,
                 previousText: previous?.[field]?.text || '',
                 previousNumbers,
-                deltas: initial
+                deltas: fieldInitial
                 ? currentNumbers.map(() => null)
                 : currentNumbers.map((value, index) => {
                     const oldValue = previousNumbers[index];
@@ -2420,21 +2434,24 @@ HWUS_getCurrentPlayerId();
 
         const heading = document.createElement('div');
         heading.className = `${MODULE}-heading`;
-        heading.textContent = `${playerName} History`;
+
+        const headingText = document.createElement('span');
+        headingText.className = `${MODULE}-heading-text`;
+        headingText.textContent = `${playerName} History`;
+
+        const settingsButton = document.createElement('button');
+        settingsButton.type = 'button';
+        settingsButton.className = `${MODULE}-settings-button`;
+        settingsButton.textContent = '⚙';
+        settingsButton.title = 'Choose tracked player stats';
+        settingsButton.setAttribute('aria-label', 'Choose tracked player stats');
+        settingsButton.setAttribute('aria-expanded', 'false');
+
+        heading.append(headingText, settingsButton);
 
         const body = document.createElement('div');
         body.className = `${MODULE}-body`;
-
-        if (!history.length) {
-            const empty = document.createElement('div');
-            empty.className = `${MODULE}-empty`;
-            empty.textContent = 'No recordings.';
-            body.append(empty);
-        } else {
-            for (const recording of history) {
-                body.append(buildRecording(recording));
-            }
-        }
+        renderHistoryBody(body, history);
 
         panel.append(heading, body);
         injectStyles();
@@ -2451,7 +2468,173 @@ HWUS_getCurrentPlayerId();
         }
 
         layout.insertBefore(panel, nativeTable);
-        installResponsiveValueRows(panel);
+        const syncValueRows = installResponsiveValueRows(panel);
+
+        let settingsPopover = null;
+
+        const closeSettings = () => {
+            settingsPopover?.remove();
+            settingsPopover = null;
+            settingsButton.setAttribute('aria-expanded', 'false');
+        };
+
+        settingsButton.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (settingsPopover) {
+                closeSettings();
+                return;
+            }
+
+            settingsPopover = buildSettingsPopover(() => {
+                trackedFields = resolveTrackedFields();
+                activeFields = FIELD_ORDER.filter(field => trackedFields.has(field));
+                saveActiveSnapshot();
+                renderHistoryBody(body, history);
+                requestAnimationFrame(syncValueRows);
+            });
+
+            heading.append(settingsPopover);
+            settingsButton.setAttribute('aria-expanded', 'true');
+        });
+
+        document.addEventListener('mousedown', event => {
+            if (!settingsPopover) return;
+            if (settingsPopover.contains(event.target)) return;
+            if (settingsButton.contains(event.target)) return;
+            closeSettings();
+        }, true);
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeSettings();
+        });
+    }
+
+    function renderHistoryBody(body, history) {
+        body.replaceChildren();
+        let visibleRecordings = 0;
+
+        for (const recording of history) {
+            const group = buildRecording(recording);
+            if (!group.querySelector(`.${MODULE}-field-row`)) continue;
+            body.append(group);
+            visibleRecordings++;
+        }
+
+        if (visibleRecordings) return;
+
+        const empty = document.createElement('div');
+        empty.className = `${MODULE}-empty`;
+        empty.textContent = activeFields.length
+            ? 'No recordings.'
+            : 'No stats selected.';
+        body.append(empty);
+    }
+
+    function buildSettingsPopover(onChanged) {
+        const popover = document.createElement('div');
+        popover.className = `${MODULE}-settings-popover`;
+        popover.setAttribute('role', 'group');
+        popover.setAttribute('aria-label', 'Tracked player stats');
+
+        let scope = 'hobo';
+
+        const render = () => {
+            popover.replaceChildren();
+
+            const title = document.createElement('div');
+            title.className = `${MODULE}-settings-title`;
+            title.textContent = 'Track Stats';
+
+            const scopes = document.createElement('div');
+            scopes.className = `${MODULE}-settings-scopes`;
+
+            const hoboScope = document.createElement('button');
+            hoboScope.type = 'button';
+            hoboScope.textContent = 'This Hobo';
+            hoboScope.className = `${MODULE}-settings-scope`;
+            hoboScope.classList.toggle(`${MODULE}-settings-scope-active`, scope === 'hobo');
+            hoboScope.addEventListener('click', () => {
+                scope = 'hobo';
+                render();
+            });
+
+            const globalScope = document.createElement('button');
+            globalScope.type = 'button';
+            globalScope.textContent = 'Global';
+            globalScope.className = `${MODULE}-settings-scope`;
+            globalScope.classList.toggle(`${MODULE}-settings-scope-active`, scope === 'global');
+            globalScope.addEventListener('click', () => {
+                scope = 'global';
+                render();
+            });
+
+            scopes.append(hoboScope, globalScope);
+            popover.append(title, scopes);
+
+            for (const field of FIELD_ORDER) {
+                const label = document.createElement('label');
+                label.className = `${MODULE}-settings-option`;
+
+                const overridden = hasHoboOverride(field);
+                label.classList.toggle(
+                    `${MODULE}-settings-option-overridden`,
+                    scope === 'hobo' && overridden
+                );
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = scope === 'global'
+                    ? globalTrackedFields.has(field)
+                    : trackedFields.has(field);
+
+                checkbox.addEventListener('change', () => {
+                    if (scope === 'global') {
+                        const previousGlobalValue = globalTrackedFields.has(field);
+                        if (checkbox.checked) globalTrackedFields.add(field);
+                        else globalTrackedFields.delete(field);
+                        resetAffectedSnapshots(
+                            field,
+                            previousGlobalValue,
+                            checkbox.checked
+                        );
+                        saveGlobalTrackedFields();
+                        normalizeHoboOverrides();
+                        saveHoboOverrides();
+                    } else {
+                        const globalValue = globalTrackedFields.has(field);
+                        if (checkbox.checked === globalValue) {
+                            delete hoboOverrides[field];
+                        } else {
+                            hoboOverrides[field] = checkbox.checked;
+                        }
+                        saveHoboOverrides();
+                    }
+
+                    trackedFields = resolveTrackedFields();
+                    onChanged();
+                    render();
+                });
+
+                const text = document.createElement('span');
+                text.textContent = field;
+                label.append(checkbox, text);
+
+                if (scope === 'hobo' && overridden) {
+                    const marker = document.createElement('small');
+                    marker.className = `${MODULE}-settings-override-marker`;
+                    marker.textContent = 'override';
+                    label.append(marker);
+                }
+
+                popover.append(label);
+            }
+        };
+
+        render();
+
+        return popover;
     }
 
     function buildRecording(recording) {
@@ -2464,27 +2647,31 @@ HWUS_getCurrentPlayerId();
         group.append(timestamp);
 
         for (const field of FIELD_ORDER) {
+            if (!trackedFields.has(field)) continue;
+
             const entry = recording.fields?.[field];
             if (!entry) continue;
+
+            const initial = entry.initial ?? recording.initial;
 
             if (field === 'Record' && entry.currentNumbers?.length >= 4) {
                 for (const metric of RECORD_METRICS) {
                     const deltaValue = entry.deltas?.[metric.index];
 
                     if (
-                        !recording.initial &&
+                        !initial &&
                         Number.isFinite(deltaValue) &&
                         deltaValue === 0
                     ) {
                         continue;
                     }
 
-                    group.append(buildRecordMetricRow(entry, metric, recording.initial));
+                    group.append(buildRecordMetricRow(entry, metric, initial));
                 }
                 continue;
             }
 
-            group.append(buildFieldRow(field, entry, recording.initial));
+            group.append(buildFieldRow(field, entry, initial));
         }
 
         return group;
@@ -2578,6 +2765,8 @@ HWUS_getCurrentPlayerId();
         } else {
             window.addEventListener('resize', sync, { passive: true });
         }
+
+        return sync;
     }
 
     function formatRecordMetricValue(value, percent) {
@@ -2640,6 +2829,113 @@ HWUS_getCurrentPlayerId();
         }
     }
 
+    function loadGlobalTrackedFields() {
+        const saved = readJSON(GLOBAL_SETTINGS_KEY, null);
+        if (!Array.isArray(saved)) return new Set(DEFAULT_FIELDS);
+
+        return new Set(saved.filter(field => FIELD_ORDER.includes(field)));
+    }
+
+    function saveGlobalTrackedFields() {
+        localStorage.setItem(
+            GLOBAL_SETTINGS_KEY,
+            JSON.stringify(FIELD_ORDER.filter(field => globalTrackedFields.has(field)))
+        );
+    }
+
+    function loadHoboOverrides() {
+        const saved = readJSON(`${MODULE}:tracked-field-overrides:${playerId}:v1`, {});
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+
+        return Object.fromEntries(
+            Object.entries(saved).filter(([field, value]) =>
+                FIELD_ORDER.includes(field) && typeof value === 'boolean'
+            )
+        );
+    }
+
+    function resolveTrackedFields() {
+        return new Set(FIELD_ORDER.filter(field =>
+            hasHoboOverride(field)
+                ? hoboOverrides[field]
+                : globalTrackedFields.has(field)
+        ));
+    }
+
+    function hasHoboOverride(field) {
+        return Object.prototype.hasOwnProperty.call(hoboOverrides, field);
+    }
+
+    function normalizeHoboOverrides() {
+        for (const field of Object.keys(hoboOverrides)) {
+            if (hoboOverrides[field] === globalTrackedFields.has(field)) {
+                delete hoboOverrides[field];
+            }
+        }
+    }
+
+    function saveHoboOverrides() {
+        const key = `${MODULE}:tracked-field-overrides:${playerId}:v1`;
+        normalizeHoboOverrides();
+
+        if (Object.keys(hoboOverrides).length) {
+            localStorage.setItem(key, JSON.stringify(hoboOverrides));
+        } else {
+            localStorage.removeItem(key);
+        }
+    }
+
+    function resetAffectedSnapshots(field, previousGlobalValue, nextGlobalValue) {
+        if (previousGlobalValue === nextGlobalValue) return;
+
+        const snapshotPrefix = `${MODULE}:snapshot:`;
+        const overridePrefix = `${MODULE}:tracked-field-overrides:`;
+        const overrideSuffix = ':v1';
+        const snapshotKeys = [];
+
+        for (let index = 0; index < localStorage.length; index++) {
+            const key = localStorage.key(index);
+            if (key?.startsWith(snapshotPrefix)) snapshotKeys.push(key);
+        }
+
+        for (const snapshotKey of snapshotKeys) {
+            const snapshotPlayerId = snapshotKey.slice(snapshotPrefix.length);
+            const savedOverrides = readJSON(
+                `${overridePrefix}${snapshotPlayerId}${overrideSuffix}`,
+                {}
+            );
+            const hasOverride = Boolean(
+                savedOverrides &&
+                typeof savedOverrides === 'object' &&
+                !Array.isArray(savedOverrides) &&
+                Object.prototype.hasOwnProperty.call(savedOverrides, field) &&
+                typeof savedOverrides[field] === 'boolean'
+            );
+            const previousEffective = hasOverride
+                ? savedOverrides[field]
+                : previousGlobalValue;
+            const nextEffective = hasOverride
+                ? savedOverrides[field]
+                : nextGlobalValue;
+
+            if (previousEffective === nextEffective) continue;
+
+            const snapshot = readJSON(snapshotKey, {});
+            if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+                continue;
+            }
+
+            delete snapshot[field];
+            localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
+        }
+    }
+
+    function saveActiveSnapshot() {
+        const snapshot = {};
+        for (const field of activeFields) snapshot[field] = currentSnapshot[field];
+        localStorage.setItem(STORAGE.snapshot, JSON.stringify(snapshot));
+    }
+
     function injectStyles() {
         if (document.getElementById(`${MODULE}-styles`)) return;
 
@@ -2682,11 +2978,122 @@ HWUS_getCurrentPlayerId();
                 position: sticky;
                 top: 0;
                 z-index: 1;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 6px;
                 margin: 0 0 3px;
                 padding: 5px 5px;
                 background-color: #E4ECF1;
                 border-bottom: 2px solid #fcc;
                 font-weight: bold;
+            }
+
+            .${MODULE}-heading-text {
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .${MODULE}-settings-button {
+                flex: 0 0 auto;
+                width: 18px;
+                height: 18px;
+                margin: -3px -2px -3px 0;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                color: #555;
+                font: 14px/18px Arial, sans-serif;
+                text-align: center;
+                cursor: pointer;
+            }
+
+            .${MODULE}-settings-button:hover,
+            .${MODULE}-settings-button:focus-visible,
+            .${MODULE}-settings-button[aria-expanded="true"] {
+                color: #000;
+                outline: none;
+                text-shadow: 0 0 2px #fff;
+            }
+
+            .${MODULE}-settings-popover {
+                position: absolute;
+                top: calc(100% + 2px);
+                right: 0;
+                z-index: 4;
+                min-width: 154px;
+                padding: 5px 7px 6px;
+                box-sizing: border-box;
+                border: 1px solid #999;
+                border-radius: 3px;
+                background: #f7f7f7;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+                color: #222;
+                font-weight: normal;
+            }
+
+            .${MODULE}-settings-title {
+                margin-bottom: 3px;
+                padding-bottom: 3px;
+                border-bottom: 1px solid #ccc;
+                font-weight: bold;
+            }
+
+            .${MODULE}-settings-scopes {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 3px;
+                margin-bottom: 4px;
+            }
+
+            .${MODULE}-settings-scope {
+                padding: 2px 4px;
+                border: 1px solid #bbb;
+                border-radius: 2px;
+                background: #eee;
+                color: #555;
+                font: bold 9px/13px Tahoma, Arial, sans-serif;
+                cursor: pointer;
+            }
+
+            .${MODULE}-settings-scope:hover,
+            .${MODULE}-settings-scope:focus-visible {
+                border-color: #777;
+                color: #111;
+                outline: none;
+            }
+
+            .${MODULE}-settings-scope-active {
+                border-color: #888;
+                background: #dce8ef;
+                color: #111;
+            }
+
+            .${MODULE}-settings-option {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                padding: 2px 0;
+                white-space: nowrap;
+                cursor: pointer;
+            }
+
+            .${MODULE}-settings-option input {
+                margin: 0;
+            }
+
+            .${MODULE}-settings-option-overridden {
+                font-weight: bold;
+            }
+
+            .${MODULE}-settings-override-marker {
+                margin-left: auto;
+                color: #777;
+                font-size: 8px;
+                font-style: italic;
+                font-weight: normal;
             }
 
             .${MODULE}-recording {
