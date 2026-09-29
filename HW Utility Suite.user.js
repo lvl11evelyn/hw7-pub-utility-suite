@@ -11648,187 +11648,227 @@ HWUS_getCurrentPlayerId();
 
     removeInviteFriendsBlock();
 
-
-
     const MODULE = 'hw-swim-times';
 
-// ------------------------------------------------------------------------
-// Known schedule shifts. The swim sequence is continuous within each segment,
-// with the normal Monday skip, but HoboWars can shift the sequence at a
-// calendar boundary. Preserve each confirmed shift as a dated anchor instead
-// of forcing one anchor to project through every boundary.
-// ------------------------------------------------------------------------
-        const SWIM_ANCHORS = [
-            { date: '2026-08-26', state: 2 }, // Aug 26: 10/1
-            { date: '2026-09-01', state: 5 }  // Sep  1: 7
-        ];
+    // Confirmed schedule anchors.
+    //
+    // From an anchor, the swim sequence normally advances by one phase per day,
+    // with Mondays advancing by two phases. Crossing into a new calendar month
+    // additionally shifts the sequence backward by three phases:
+    //
+    //   Normal month boundary:  +1 - 3 = -2 phases
+    //   Monday month boundary:  +2 - 3 = -1 phase
+    //
+    // This preserves the normal Monday behavior while reproducing the observed
+    // month-boundary shift in the published HoboWars swim schedule.
+    const SWIM_ANCHORS = [
+        { date: '2026-08-26', state: 2 }, // Aug 26: 10/1
+        { date: '2026-09-01', state: 5 }  // Sep  1: 7
+    ];
 
-        const SWIM_STATES = [
-            '12/3', //     = 0
-            '11/2', //     = 1
-            '10/1', //     = 2
-            '9', //        = 3
-            '8', //        = 4
-            '7', //        = 5
-            '6', //        = 6
-            '5', //        = 7
-            '4' //         = 8
-        ];
+    const SWIM_STATES = [
+        '12/3', // = 0
+        '11/2', // = 1
+        '10/1', // = 2
+        '9',    // = 3
+        '8',    // = 4
+        '7',    // = 5
+        '6',    // = 6
+        '5',    // = 7
+        '4'     // = 8
+    ];
 
-        const MONTHS = [
-            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-        ];
+    const MONTHS = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
 
-        const MS_PER_DAY = 86400000;
+    const MS_PER_DAY = 86400000;
 
-        if (document.getElementById(MODULE)) return;
+    if (document.getElementById(MODULE)) return;
 
-        const topbar = document.querySelector('.top-center');
-        if (!topbar) return;
+    const topbar = document.querySelector('.top-center');
+    if (!topbar) return;
 
-        const block = document.createElement('div');
-        block.id = MODULE;
+    const block = document.createElement('div');
+    block.id = MODULE;
 
-        const pre = document.createElement('pre');
-        pre.textContent = buildDisplay();
+    const pre = document.createElement('pre');
+    pre.textContent = buildDisplay();
 
-        Object.assign(block.style, {
-            boxSizing: 'border-box',
-            width: '110px',
-            margin: '0',
-            padding: '0 4px',
-            background: 'black',
-            outline: '2px inset #555',
-            flex: '0 0 auto',
-            display: 'inline-block'
-        });
+    Object.assign(block.style, {
+        boxSizing: 'border-box',
+        width: '110px',
+        margin: '0',
+        padding: '0 4px',
+        background: 'black',
+        outline: '2px inset #555',
+        flex: '0 0 auto',
+        display: 'inline-block'
+    });
 
-        Object.assign(pre.style, {
-            margin: '0',
-            padding: '0',
-            border: '0',
-            background: 'none',
-            color: 'cyan',
-            font: 'bold 14px/1.5 monospace',
-            whiteSpace: 'pre',
-            textAlign: 'left'
-        });
+    Object.assign(pre.style, {
+        margin: '0',
+        padding: '0',
+        border: '0',
+        background: 'none',
+        color: 'cyan',
+        font: 'bold 14px/1.5 monospace',
+        whiteSpace: 'pre',
+        textAlign: 'left'
+    });
 
-        block.appendChild(pre);
-        topbar.appendChild(block);
+    block.appendChild(pre);
+    topbar.appendChild(block);
 
-        function buildDisplay() {
-            const today = getHoboDate();
+    function buildDisplay() {
+        const today = getHoboDate();
 
-            return [0, 1, 2]
-                .map(offset => {
-                    const date = addDays(today, offset);
-                    const state = getSwimState(date);
+        return [0, 1, 2]
+            .map(offset => {
+                const date = addDays(today, offset);
+                const state = getSwimState(date);
 
-                    return formatLine(date, SWIM_STATES[state]);
-                })
-                .join('\n');
+                return formatLine(date, SWIM_STATES[state]);
+            })
+            .join('\n');
+    }
+
+    function getHoboDate(now = new Date()) {
+        // HoboWars clock is fixed AEST / UTC+10.
+        const aest = new Date(now.getTime() + (10 * 60 * 60 * 1000));
+
+        return new Date(Date.UTC(
+            aest.getUTCFullYear(),
+            aest.getUTCMonth(),
+            aest.getUTCDate()
+        ));
+    }
+
+    function getSwimState(targetDate) {
+        const anchors = SWIM_ANCHORS
+            .map(anchor => ({
+                date: parseDate(anchor.date),
+                state: anchor.state
+            }))
+            .sort((a, b) => a.date - b.date);
+
+        // Use the most recent confirmed anchor that is not later than the
+        // target date.
+        let anchor = anchors[0];
+
+        for (const candidate of anchors) {
+            if (candidate.date <= targetDate) {
+                anchor = candidate;
+            } else {
+                break;
+            }
         }
 
-        function getHoboDate(now = new Date()) {
-            // HoboWars clock is fixed AEST / UTC+10.
-            const aest = new Date(now.getTime() + (10 * 60 * 60 * 1000));
+        let state = anchor.state;
+        let cursor = new Date(anchor.date);
 
-            return new Date(Date.UTC(
-                aest.getUTCFullYear(),
-                aest.getUTCMonth(),
-                aest.getUTCDate()
-            ));
-        }
+        // Project forward from the selected anchor.
+        if (targetDate > anchor.date) {
+            while (cursor < targetDate) {
+                const previousMonth = cursor.getUTCMonth();
 
-        function getSwimState(targetDate) {
-            const anchors = SWIM_ANCHORS
-                .map(anchor => ({
-                    date: parseDate(anchor.date),
-                    state: anchor.state
-                }))
-                .sort((a, b) => a.date - b.date);
+                cursor = addDays(cursor, 1);
 
-            // Use the most recent confirmed schedule anchor that is not later
-            // than the target date. This prevents a newly confirmed monthly
-            // shift from corrupting the final days of the preceding month.
-            let anchor = anchors[0];
+                // Normal daily advancement.
+                state =
+                    (state + 1) %
+                    SWIM_STATES.length;
 
-            for (const candidate of anchors) {
-                if (candidate.date <= targetDate) {
-                    anchor = candidate;
-                } else {
-                    break;
-                }
-            }
-
-            let state = anchor.state;
-            let cursor = new Date(anchor.date);
-
-            if (targetDate > anchor.date) {
-                while (cursor < targetDate) {
-                    cursor = addDays(cursor, 1);
-
-                    state = (state + 1) % SWIM_STATES.length;
-
-                    if (cursor.getUTCDay() === 1) {
-                        state = (state + 1) % SWIM_STATES.length;
-                    }
-                }
-
-                return state;
-            }
-
-            while (cursor > targetDate) {
-                // Undo the transition that produced the current date.
+                // Mondays advance one additional phase.
                 if (cursor.getUTCDay() === 1) {
                     state =
-                        (state - 1 + SWIM_STATES.length) %
+                        (state + 1) %
                         SWIM_STATES.length;
                 }
 
-                state =
-                    (state - 1 + SWIM_STATES.length) %
-                    SWIM_STATES.length;
-
-                cursor = addDays(cursor, -1);
+                // Entering a new month shifts the sequence back three phases.
+                //
+                // Combined result:
+                //   ordinary 1st: +1 - 3 = -2
+                //   Monday 1st:   +2 - 3 = -1
+                if (cursor.getUTCMonth() !== previousMonth) {
+                    state =
+                        (state - 3 + SWIM_STATES.length) %
+                        SWIM_STATES.length;
+                }
             }
 
             return state;
         }
 
-        function formatLine(date, state) {
-            const month = MONTHS[date.getUTCMonth()];
-            const day = String(date.getUTCDate()).padStart(2, ' ');
+        // Project backward from the selected anchor.
+        //
+        // Reverse each transition in the opposite order:
+        //   month adjustment -> Monday adjustment -> normal advancement.
+        while (cursor > targetDate) {
+            const previousDate = addDays(cursor, -1);
 
-            const [first, second] = state.split('/');
+            // Undo the -3 month-boundary adjustment.
+            if (
+                cursor.getUTCMonth() !==
+                previousDate.getUTCMonth()
+            ) {
+                state =
+                    (state + 3) %
+                    SWIM_STATES.length;
+            }
 
-            const hour =
-                String(first).padStart(2, ' ') +
-                (second ? `/${second}` : '');
+            // Undo the additional Monday advancement.
+            if (cursor.getUTCDay() === 1) {
+                state =
+                    (state - 1 + SWIM_STATES.length) %
+                    SWIM_STATES.length;
+            }
 
-            return `${month} ${day}: ${hour}`;
+            // Undo the normal daily advancement.
+            state =
+                (state - 1 + SWIM_STATES.length) %
+                SWIM_STATES.length;
+
+            cursor = previousDate;
         }
 
-        function parseDate(value) {
-            const [year, month, day] = value
-                .split('-')
-                .map(Number);
+        return state;
+    }
 
-            return new Date(Date.UTC(
-                year,
-                month - 1,
-                day
-            ));
-        }
+    function formatLine(date, state) {
+        const month = MONTHS[date.getUTCMonth()];
+        const day = String(date.getUTCDate()).padStart(2, ' ');
 
-        function addDays(date, amount) {
-            return new Date(date.getTime() + (amount * MS_PER_DAY));
-        }
-    })();
-}
+        const [first, second] = state.split('/');
 
+        const hour =
+            String(first).padStart(2, ' ') +
+            (second ? `/${second}` : '');
+
+        return `${month} ${day}: ${hour}`;
+    }
+
+    function parseDate(value) {
+        const [year, month, day] = value
+            .split('-')
+            .map(Number);
+
+        return new Date(Date.UTC(
+            year,
+            month - 1,
+            day
+        ));
+    }
+
+    function addDays(date, amount) {
+        return new Date(
+            date.getTime() +
+            (amount * MS_PER_DAY)
+        );
+    }
+})();
 // ============================================================================
 // OFFICIAL RELEASE INTEGRITY GATE
 // Runs only while every canonical metadata identity field still identifies this
