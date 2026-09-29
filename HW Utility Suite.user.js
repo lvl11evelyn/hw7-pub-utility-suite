@@ -11869,6 +11869,8 @@ HWUS_getCurrentPlayerId();
         );
     }
 })();
+}
+
 // ============================================================================
 // OFFICIAL RELEASE INTEGRITY GATE
 // Runs only while every canonical metadata identity field still identifies this
@@ -11878,14 +11880,14 @@ const HWUS_RELEASE_IDENTITY = Object.freeze({
     author: 'lvl11evelyn HW1(2924238)',
     name: 'HW Utility Suite',
     namespace: 'https://www.hobowars.com/',
-    version: '4.36',
+    version: '4.43',
     homepageURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite',
     supportURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/issues',
     updateURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js',
     downloadURL: 'https://github.com/lvl11evelyn/hw7-pub-utility-suite/raw/refs/heads/main/HW%20Utility%20Suite.user.js'
 });
 
-const HWUS_RELEASE_SHA256 = '98acc279a53b0a68ca047e3afa224099c972b24681c4fda0977f2227e43ddf58';
+const HWUS_RELEASE_SHA256 = '9f3706b073070e7d5865af7d2f36dbba239d300f707b5dc3723ca3ef1af9c06e';
 
 function HWUS_getMetadataValue(key) {
     if (typeof GM_info !== 'object' || !GM_info) return null;
@@ -11945,7 +11947,7 @@ function HWUS_renderIntegrityFailure() {
     const message = document.createElement('p');
     message.style.cssText = 'margin:0 0 10px;line-height:1.45';
     message.textContent =
-        'This installation still identifies itself as an HW Utility Suite v4.36 release, ' +
+        'This installation still identifies itself as an HW Utility Suite v4.43 release, ' +
         'but its executable logic no longer matches the published build. Suite execution has been halted.';
 
     const instruction = document.createElement('p');
